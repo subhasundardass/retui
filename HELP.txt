@@ -1,4 +1,0 @@
-# Create Screen
-go run cmd/retui-gen/main.go -make screen:settings
-tail -f retui.log
-go generate ./ent
