@@ -6,7 +6,7 @@ Inspired by React and Flutter, Retui brings a component-based, reactive approach
 ## Installation
 
 ```bash
-go get github.com/subhasundardass/tuix
+go get github.com/subhasundardass/retui
 ```
 
 Requires Go 1.21+.
@@ -21,29 +21,29 @@ package main
 import (
     "fmt"
 
-    "github.com/subhasundardass/tuix/tuix"
+    "github.com/subhasundardass/retui/retui"
 )
 
-func App(props tuix.Props) tuix.Element {
-    count, setCount := tuix.UseState(0)
+func App(props retui.Props) retui.Element {
+    count, setCount := retui.UseState(0)
 
-    if tuix.CurrentKey.Code == tuix.KeyEnter {
+    if retui.CurrentKey.Code == retui.KeyEnter {
         setCount(count + 1)
     }
 
-    label := tuix.NewStyle().Bold(true).Foreground(tuix.Cyan)
+    label := retui.NewStyle().Bold(true).Foreground(retui.Cyan)
 
-    return tuix.Box(
-        tuix.Props{Direction: tuix.Column, Gap: 1, Padding: [4]int{1, 2, 1, 2}},
-        tuix.NewStyle(),
-        tuix.Text("Press Enter to count, Ctrl-C to quit", tuix.NewStyle()),
-        tuix.Text(fmt.Sprintf("Count: %d", count), label),
+    return retui.Box(
+        retui.Props{Direction: retui.Column, Gap: 1, Padding: [4]int{1, 2, 1, 2}},
+        retui.NewStyle(),
+        retui.Text("Press Enter to count, Ctrl-C to quit", retui.NewStyle()),
+        retui.Text(fmt.Sprintf("Count: %d", count), label),
     )
 }
 
 func main() {
-    app := tuix.NewApp(60, 6)
-    app.Run(App, tuix.Props{})
+    app := retui.NewApp(60, 6)
+    app.Run(App, retui.Props{})
 }
 ```
 
