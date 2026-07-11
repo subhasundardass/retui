@@ -2,3 +2,17 @@
 go run cmd/retui-gen/main.go -make screen:settings
 tail -f retui.log
 go generate ./ent
+
+
+
+//===GIT
+git add .
+git commit -m "Add Table and Tree components"
+git push
+
+git tag -a v0.2.0 -m "Added Table and Tree widgets"
+git push origin v0.2.0
+
+//Delete a remote tag:
+git push origin --delete v0.1.0
+
