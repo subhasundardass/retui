@@ -3,6 +3,60 @@
 A Go framework for building interactive terminal UIs with React-style components and hooks.
 Inspired by React and Flutter, Retui brings a component-based, reactive approach to building terminal applications.
 
+## Installation
+
+```bash
+go get github.com/subhasundardass/tuix
+```
+
+Requires Go 1.21+.
+
+---
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/subhasundardass/tuix/tuix"
+)
+
+func App(props tuix.Props) tuix.Element {
+    count, setCount := tuix.UseState(0)
+
+    if tuix.CurrentKey.Code == tuix.KeyEnter {
+        setCount(count + 1)
+    }
+
+    label := tuix.NewStyle().Bold(true).Foreground(tuix.Cyan)
+
+    return tuix.Box(
+        tuix.Props{Direction: tuix.Column, Gap: 1, Padding: [4]int{1, 2, 1, 2}},
+        tuix.NewStyle(),
+        tuix.Text("Press Enter to count, Ctrl-C to quit", tuix.NewStyle()),
+        tuix.Text(fmt.Sprintf("Count: %d", count), label),
+    )
+}
+
+func main() {
+    app := tuix.NewApp(60, 6)
+    app.Run(App, tuix.Props{})
+}
+```
+
+Run it:
+
+```bash
+go run .
+```
+
+Press **Ctrl-C** to exit (there is no `Exit()` function).
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please follow these guidelines to keep the codebase consistent.
@@ -33,7 +87,6 @@ go test ./...
 
 - Follow standard Go conventions (`gofmt`, `golint`)
 - Keep component functions pure where possible; side effects belong in `UseEffect`
-- New built-in components go in `retui/components/` — simple/display in `components.go`, interactive in `interactive.go`, compound in `complex.go`
 - Avoid adding dependencies; the stdlib + the two existing deps cover most needs
 
 ### Adding a Component
