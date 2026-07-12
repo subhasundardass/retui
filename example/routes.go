@@ -23,6 +23,11 @@ var Registry = map[string]Screen{
 		Title:  "Basic Input",
 		Render: BasicInputExample,
 	},
+	"list": {
+		ID:     "list",
+		Title:  "List",
+		Render: ListExample,
+	},
 	"windows": {
 		ID:     "windows",
 		Title:  "Windows",

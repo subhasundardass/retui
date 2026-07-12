@@ -15,6 +15,10 @@ var sidebarTree = []components.TreeNode{
 				Label: "Basic Inputs",
 			},
 			{
+				ID:    "list",
+				Label: "List",
+			},
+			{
 				ID:    "windows",
 				Label: "Windows",
 			},
