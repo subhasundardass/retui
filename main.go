@@ -27,10 +27,17 @@ func Example(props retui.Props) retui.Element {
 					Justify:   retui.JustifyCenter,
 				},
 				retui.NewStyle(),
-				retui.Text("Welcome to Retui", retui.NewStyle().Bold(true)),
+
+				retui.Box(
+					retui.Props{Direction: retui.Row, Justify: retui.JustifySpaceAround},
+					retui.NewStyle(),
+					retui.Text("Welcome to Retui", retui.NewStyle().Bold(true)),
+				),
+
 				retui.Box(
 					retui.Props{
-						Width:   retui.Fixed(40),
+						Direction: retui.Column, Align: retui.AlignCenter,
+						Width:   retui.Fixed(50),
 						Padding: [4]int{1, 0, 0, 0},
 					},
 					retui.NewStyle(),
@@ -42,6 +49,7 @@ func Example(props retui.Props) retui.Element {
 
 				retui.Box(
 					retui.Props{
+						Direction: retui.Row, Justify: retui.JustifySpaceAround,
 						Width:   retui.Fixed(40),
 						Padding: [4]int{1, 0, 0, 0},
 					},
