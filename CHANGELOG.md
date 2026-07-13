@@ -6,21 +6,22 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
-## [Unreleased]
+## [v0.2.0] - 2026-07-13
 
 ### Added
 
-- Initial project structure.
-- Basic widget system.
-- Layout engine.
+- New Panel component.
+- New List component.
+- New Date Input component.
 
 ### Changed
 
-- Ongoing improvements under active development.
+- Updated the layout system for better flexibility and consistency
+- Improved the rendering engine for faster terminal updates.
 
 ### Fixed
 
-- Bug fixes awaiting the next release.
+- Fixed several bugs and improved overall stability.
 
 ---
 
@@ -53,9 +54,10 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ## Version History
 
-| Version | Release Date | Description            |
-| ------- | ------------ | ---------------------- |
-| v0.1.0  | 2026-07-11   | Initial public release |
+| Version | Release Date | Description                   |
+| ------- | ------------ | ----------------------------- |
+| v0.1.0  | 2026-07-11   | Initial public release        |
+| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed |
 
 ---
 
