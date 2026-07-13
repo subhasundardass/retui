@@ -105,7 +105,7 @@ go test ./...
 1. **Open an issue first** for non-trivial changes to align on the approach before writing code.
 2. **Branch off `main`:**
    ```bash
-   git checkout -b feat/my-feature
+   git checkout -b feature/my-feature
    ```
 3. **Keep commits focused** — one logical change per commit with a clear message.
 4. **Add tests** for new layout or rendering behaviour in `*_test.go` files.
