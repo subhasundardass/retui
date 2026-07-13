@@ -24,7 +24,7 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
-## [v0.1.0] - 2026-06-22
+## [v0.1.0] - 2026-07-11
 
 ### Added
 
@@ -38,7 +38,6 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 - Event-driven architecture.
 - Pure Go implementation.
 - Initial documentation.
-- Example applications.
 
 ### Changed
 
@@ -56,7 +55,7 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 | Version | Release Date | Description            |
 | ------- | ------------ | ---------------------- |
-| v0.1.0  | 2026-06-22   | Initial public release |
+| v0.1.0  | 2026-07-11   | Initial public release |
 
 ---
 
