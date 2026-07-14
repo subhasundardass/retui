@@ -23,8 +23,8 @@ var sidebarTree = []components.TreeNode{
 				Label: "Windows",
 			},
 			{
-				ID:    "focus",
-				Label: "Focus",
+				ID:    "other",
+				Label: "Other",
 			},
 			{
 				ID:    "state",

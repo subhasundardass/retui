@@ -33,4 +33,14 @@ var Registry = map[string]Screen{
 		Title:  "Windows",
 		Render: WindowsExample,
 	},
+	"other": {
+		ID:     "other",
+		Title:  "Other",
+		Render: OtherExample,
+	},
+	"state": {
+		ID:     "state",
+		Title:  "State",
+		Render: CounterExample,
+	},
 }
