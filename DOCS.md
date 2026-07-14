@@ -4,10 +4,18 @@ A Go framework for building interactive terminal UIs with a React-style mental
 model. Components are plain functions; layout is flexbox; rendering is
 cell-diffed.
 
-This document is the full reference. For a one-screen pitch, see
-[README.md](README.md). For runnable demos, every section links to a
-self-contained program under [`examples/`](examples/) that you can run with
-one command.
+This document is the deep technical reference — precise signatures, gotchas,
+and source pointers. For a one-screen pitch, see [README.md](README.md). For
+a friendlier, guided walkthrough (better if you're new to retui), see the
+[wiki](https://github.com/subhasundardass/retui/wiki) — start with **Core
+Concepts**, then **Layout System** and **Hooks**.
+
+This document covers the core rendering primitives: elements, layout,
+styling, and hooks. It does **not** cover the built-in component library,
+screen navigation, focus management, or the window/modal system — those are
+documented in the wiki's **Components**, **Navigation & Focus**, and
+**Window System** pages, since they're large enough to deserve their own
+space rather than being duplicated here.
 
 ---
 
@@ -26,8 +34,12 @@ one command.
   - [Align & Justify](#align--justify)
 - [Hooks](#hooks)
   - [UseState](#usestate)
+  - [UseStateKeyed](#usestatekeyed)
   - [UseEffect](#useeffect)
   - [UseContext](#usecontext)
+- [Advanced](#advanced)
+- [Recipes](#recipes)
+- [API reference index](#api-reference-index)
 
 ---
 
@@ -37,7 +49,7 @@ one command.
 go get github.com/subhasundardass/retui
 ```
 
-Requires Go 1.21+.
+Requires Go 1.26+.
 
 ```go
 package main
@@ -58,10 +70,13 @@ func main() {
 }
 ```
 
-Press **Ctrl-C** to exit (there is no `Exit()` function).
+Press **Ctrl-C** to exit. There's also a `retui.Exit()` function you can call
+programmatically — e.g. from a keybinding or a "Quit" menu item — to request
+a graceful shutdown without waiting for Ctrl-C.
 
-→ Runnable: [`examples/hello`](examples/hello/main.go) ·
-`go run ./examples/hello`
+→ The repo's runnable demo lives at [`cmd/app`](cmd/app/main.go) — a single
+program exercising all built-in components: `go run ./cmd/app`. There's also
+a minimal counter at the repo root: `go run .`
 
 ---
 
@@ -86,7 +101,7 @@ The runtime's job:
 keyboard / ticker / resize event
         │
         ▼
-   re-render the whole tree
+   re-render the whole tree (up to 3x — see "The two-pass render")
         │
         ▼
    measure → layout (2-pass flexbox)
@@ -103,7 +118,7 @@ keyboard / ticker / resize event
 
 Source files referenced throughout: [`retui/runtime.go`](retui/runtime.go),
 [`retui/renderer.go`](retui/renderer.go),
-[`retui/layout_engine.go`](retui/layout_engine.go),
+[`retui/layout.go`](retui/layout.go),
 [`retui/hooks.go`](retui/hooks.go).
 
 ---
@@ -141,9 +156,6 @@ retui.Box(
 )
 ```
 
-→ Runnable: [`examples/layout`](examples/layout/main.go) ·
-`go run ./examples/layout`
-
 ### Styling
 
 `Style` is immutable and chainable.
@@ -171,11 +183,8 @@ Named colors: `Black`, `Red`, `Green`, `Yellow`, `Blue`, `Magenta`, `Cyan`,
 
 **Inheritance.** Styles flow from parent to child: a child whose foreground is
 `ColorNone` inherits the parent's foreground. The same applies to background.
-Bold is _promoted_ (a bold parent makes children bold) but italic and
-underline are not inherited — they are per-element opt-ins.
-
-→ Runnable: [`examples/styling`](examples/styling/main.go) ·
-`go run ./examples/styling`
+Bold is _promoted_ (a bold parent makes children bold); italic and underline
+are not currently part of the inheritance merge — they're per-element only.
 
 ### Borders
 
@@ -190,7 +199,8 @@ retui.NewStyle().Border(retui.Border{
 ```
 
 You can toggle individual sides — `Left: true` alone draws a single-side
-accent rail.
+accent rail. A border can also carry a `Title string`, rendered embedded in
+the top edge.
 
 When a border is active, the layout engine automatically inflates the box's
 padding by 1 cell on the bordered side so children don't get clipped. You do
@@ -250,8 +260,6 @@ splits 2:1.
 | `retui.AlignCenter`  | Centered                                      |
 | `retui.AlignEnd`     | Pack at end                                   |
 
-→ Runnable: [`examples/layout`](examples/layout/main.go)
-
 ---
 
 ## Hooks
@@ -275,7 +283,19 @@ The runtime re-renders the component tree **twice per event** (see
 [The two-pass render](#the-two-pass-render)); a bare `setValue(value+1)` in
 the body increments by 2, not 1. Always gate on a condition (`if key == ...`).
 
-→ Runnable: [`examples/counter`](examples/counter/main.go)
+### UseStateKeyed
+
+`UseState` identifies its slot by call position, which breaks if the number of
+hook calls can vary between renders — e.g. a tree component where nodes
+expand and collapse, changing how many rows exist. `UseStateKeyed` fixes this
+by keying state to a stable string instead:
+
+```go
+expanded, setExpanded := retui.UseStateKeyed("node-"+nodeID, false)
+```
+
+Use `UseState` by default; reach for `UseStateKeyed` specifically when you're
+rendering a variable number of items and each needs independent state.
 
 ### UseEffect
 
@@ -299,8 +319,6 @@ retui.UseEffect(func() func() {
 
 Caveat: state written from a goroutine doesn't trigger a render directly —
 the next event (key, internal 500ms tick, or resize) will pick it up.
-
-→ Runnable: [`examples/effect-clock`](examples/effect-clock/main.go)
 
 ### UseContext
 
@@ -330,8 +348,6 @@ have already executed and `UseContext` inside them sees the default value.
 
 See [Context API in depth](#context-api-in-depth) for the why.
 
-→ Runnable: [`examples/context`](examples/context/main.go)
-
 ---
 
 ## Advanced
@@ -349,8 +365,6 @@ branch.
 
 Source: [`retui/elements.go`](retui/elements.go).
 
-→ Runnable: [`examples/conditional`](examples/conditional/main.go)
-
 ### `WrappedText` vs `MultilineText`
 
 | Constructor                     | Splits on `\n`?  | Word-wraps?           |
@@ -362,8 +376,8 @@ Source: [`retui/elements.go`](retui/elements.go).
 `WrappedText` sets `Width: Grow(1)` internally, so it expands to fill its
 parent's cross-axis space and breaks lines to fit. It registers a `reflow`
 callback with the layout engine, which is why
-[`retui/layout_engine.go`](retui/layout_engine.go) runs a second measure pass
-when a wrapped element is present in the tree.
+[`retui/layout.go`](retui/layout.go) runs a second measure pass when a
+wrapped (or `Markdown`) element is present in the tree.
 
 ### Context API in depth
 
@@ -388,18 +402,19 @@ context is keyed by `*Context[T]` pointer. There's no cursor to reset between
 renders, and stacks survive across renders because they live on the Context
 object, not in a global slab.
 
-→ Runnable: [`examples/context`](examples/context/main.go)
-
 ### Bracketed paste
 
 The runtime enables bracketed paste mode on startup (terminal emits
-`\x1b[200~`…`\x1b[201~` around clipboard content). A
-[`KeyScanner`](retui/key.go) reassembles paste fragments across multiple
-`stdin.Read` calls and delivers them as a single `Key{Code: KeyPaste, Paste:
-"…"}` event. The built-in `Input` component sanitises pasted content (strips
-CSI escapes, normalises CRLF, drops control chars except `\n`/`\t`) before
-inserting it. If you build a custom text field, look at the `sanitizePaste`
-helper in [`retui/components/interactive.go`](retui/components/interactive.go).
+`\x1b[200~`…`\x1b[201~` around clipboard content). [`KeyScanner`](retui/key.go)
+reassembles paste fragments across multiple `stdin.Read` calls and delivers
+them as a single `Key{Code: KeyPaste, Paste: "…"}` event.
+
+At the moment, no built-in component consumes `KeyPaste` automatically — the
+event is parsed and delivered by the runtime, but inserting pasted text into
+a field is left to you. If you're building a custom text input, check for
+`key.Code == retui.KeyPaste` in your key-handling code and use `key.Paste` as
+the string to insert (sanitizing it yourself — stripping control characters,
+normalizing line endings — if your field needs that).
 
 ### Resize handling
 
@@ -411,11 +426,15 @@ anything special.
 
 ### The two-pass render
 
-Each event triggers two render passes of your component tree:
+Each event triggers up to three render passes of your component tree (see the
+wiki's **Advanced: Runtime, Renderer & Screen** page for the full breakdown):
 
 1. **Pass 1** — `retui.CurrentKey` is set; state setters mutate state.
 2. **Pass 2** — `retui.CurrentKey` is zeroed; the tree renders with updated
-   state. Only pass 2's tree is painted.
+   state. This is what gets painted.
+3. **Pass 3** (conditional) — if a `UseEffect` callback (which runs after
+   Pass 2 paints) itself calls a state setter, the tree renders once more
+   immediately, without waiting for another external event.
 
 This is why unconditional `setValue(value+1)` in a component body double-
 increments per event. Two practical rules:
@@ -432,11 +451,13 @@ Source: [`retui/runtime.go`](retui/runtime.go) `App.Render`.
 
 ## Recipes
 
-Beyond the per-feature examples, here are short patterns for common needs.
+Beyond the primitives above, here are short patterns for common needs, using
+the real built-in component builders from `retui/components`.
 
 ### Focus cycling
 
-Track which interactive element is focused with a single `UseState`:
+Track which interactive element is focused with a single `UseState`, then
+feed each field's `Focused(...)` from it:
 
 ```go
 focus, setFocus := retui.UseState(0)
@@ -447,11 +468,19 @@ if retui.CurrentKey.Code == retui.KeyTab {
 return retui.Box(
     retui.Props{Direction: retui.Column, Gap: 1},
     retui.NewStyle(),
-    components.Input("name>", "▌", focus == 0, name, setName),
-    components.Input("email>", "▌", focus == 1, email, setEmail),
-    components.Button("Submit", focus == 2),
+    components.TextInput().ID("name").Focused(focus == 0).
+        Value(name).OnChange(func(id, v string) { setName(v) }).Render(),
+    components.TextInput().ID("email").Focused(focus == 1).
+        Value(email).OnChange(func(id, v string) { setEmail(v) }).Render(),
+    components.Button().ID("submit").Label("Submit").Focused(focus == 2).
+        OnClick(func(id string) { /* submit */ }).Render(),
 )
 ```
+
+For most apps, prefer `retui.SetFocusOrder` + `retui.IsFocused` (covered in
+the wiki's **Navigation & Focus** page) over hand-rolled `UseState` cycling
+like this — it's the same idea, but shared framework-wide instead of
+reimplemented per screen.
 
 ### Polling external data
 
@@ -491,7 +520,9 @@ retui.UseEffect(func() func() {
 
 ## API reference index
 
-Quick jump-to-source for everything exported.
+Quick jump-to-source for everything covered in this document. For the
+built-in component library, navigation/focus, and the window system, see the
+wiki instead of this index.
 
 ### Core types
 
@@ -514,12 +545,13 @@ Quick jump-to-source for everything exported.
 - [`Style`](retui/style.go) — `NewStyle()`, `.Bold()`, `.Italic()`,
   `.Underline()`, `.Foreground()`, `.Background()`, `.Border()`
 - [`Color`](retui/style.go) — `Black`…`BrightWhite`, `Hex(s)`, `ANSI256(n)`
-- [`Border`](retui/style.go) — sides + `Chars` + `Color`
+- [`Border`](retui/style.go) — sides + `Chars` + `Color` + `Title`
 - Presets: `BorderSharp`, `BorderRounded`, `BorderDouble`, `BorderThick`
 
 ### Hooks
 
 - [`UseState[T](initial T) (T, func(T))`](retui/hooks.go)
+- [`UseStateKeyed[T](key string, initial T) (T, func(T))`](retui/hooks.go)
 - [`UseEffect(fn func() func(), deps []any)`](retui/hooks.go)
 - [`CreateContext[T](defaultValue T) *Context[T]`](retui/hooks.go)
 - [`UseContext[T](c *Context[T]) T`](retui/hooks.go)
@@ -534,3 +566,14 @@ Quick jump-to-source for everything exported.
 
 - [`NewApp(width, height int) *App`](retui/runtime.go)
 - [`(*App).Run(fn func(Props) Element, props Props)`](retui/runtime.go)
+- [`Exit()`](retui/runtime.go) — requests a graceful shutdown
+
+### Elsewhere in the wiki
+
+- **Components** — `Button`, `TextInput`, `Password`, `NumberInput`,
+  `DateInput`, `Checkbox`, `SelectPicker`, `List`, `Tree`, `Panel`
+- **Navigation & Focus** — `PushScreen`/`PopScreen`, `SetFocus`/`IsFocused`,
+  `SetFocusOrder`, focus capture, `UseFocusedKey`/`UseFocusedKeySimple`
+- **Window System** — `window.NewWindow`, modal windows, Z-order
+- **Advanced: Runtime, Renderer & Screen** — the full render-loop and
+  terminal-diffing internals, in depth
