@@ -1,29 +1,19 @@
 # retui
 
-A Go framework for building interactive terminal UIs with React-style components and hooks.
-
-Inspired by React and Flutter, retui brings a component-based, reactive approach to building terminal applications — write functional components, manage state with hooks, and let a flexbox layout engine handle the rest.
+Build terminal apps in Go the same way you'd build a modern web app — with components, hooks, and a flexbox-style layout system, instead of manually painting characters to a screen.
 
 <img src="retui_banner.png" alt="Retui Framework" width="700"/>
 
-## Table of Contents
+## What is this, really?
 
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Contributing](#contributing)
-- [License](#license)
+If you've ever used React (or something like it), retui will feel familiar:
 
-## Features
+- Your UI is built from small **functions that return `Element`** — components.
+- **Hooks** (`UseState`, `UseEffect`, `UseContext`) let components remember things between renders.
+- A **flexbox-style layout system** (`Box`, `Row`, `Column`) handles positioning, so you never calculate coordinates by hand.
+- RetUI automatically figures out what changed and only redraws that — your terminal app stays fast even as it grows.
 
-- **Functional components** — plain Go functions that return an `Element` tree
-- **Hooks** — [`UseState`](DOCS.md#usestate), [`UseEffect`](DOCS.md#useeffect), and [`UseContext`](DOCS.md#usecontext)
-- **Flexbox [layout engine](DOCS.md#layout)** — two-pass (measure → layout) with `Row`/`Column` direction, `Gap`, `Padding`, `Align`, `Justify`, and `Fixed`/`Grow`/`Fit` sizing
-- **Rich [styling](DOCS.md#styling)** — ANSI16, ANSI256, and RGB/Hex colors; bold, italic, underline; four border presets
-- **Bracketed paste** — multi-line clipboard content arrives as a single `KeyPaste` event
-- **Built-in [component library](DOCS.md#component-library)** — Table, Tabs, Modal, Input, Button, Checkbox, List, SelectPicker, Spinner, ProgressBar, Alert, Badge, Panel
-- **Efficient rendering** — cell-level diffing; only changed cells are written to the terminal
-- **Full Unicode support** — proper character-width handling via `go-runewidth`
+No prior terminal-UI experience needed. If you can write a Go function, you can build with retui.
 
 ## Installation
 
@@ -31,9 +21,11 @@ Inspired by React and Flutter, retui brings a component-based, reactive approach
 go get github.com/subhasundardass/retui
 ```
 
-Requires **Go 1.21+**.
+Requires **Go 1.26+**.
 
 ## Quick Start
+
+Here's a complete, working app — a counter you control with the Enter key:
 
 ```go
 package main
@@ -51,13 +43,11 @@ func App(props retui.Props) retui.Element {
         setCount(count + 1)
     }
 
-    label := retui.NewStyle().Bold(true).Foreground(retui.Cyan)
-
     return retui.Box(
         retui.Props{Direction: retui.Column, Gap: 1, Padding: [4]int{1, 2, 1, 2}},
         retui.NewStyle(),
         retui.Text("Press Enter to count, Ctrl-C to quit", retui.NewStyle()),
-        retui.Text(fmt.Sprintf("Count: %d", count), label),
+        retui.Text(fmt.Sprintf("Count: %d", count), retui.NewStyle().Bold(true).Foreground(retui.Cyan)),
     )
 }
 
@@ -73,25 +63,38 @@ Run it:
 go run .
 ```
 
-> **Note:** Press **Ctrl-C** to exit — there is no `Exit()` function.
+That's genuinely it. One function, one call to `app.Run`, and you have a working terminal app.
 
-For a full walkthrough of components, hooks, layout, and styling, see [`DOCS.md`](DOCS.md).
+### Try the example app
 
-### Try the Example App
-
-The repo ships with a demo app that exercises all the built-in components. Run it with:
+The repo ships with a demo that exercises the built-in components — a good way to see what's possible before building your own:
 
 ```bash
 go run ./cmd/app
 ```
 
-Use it to check that components (Table, Tabs, Modal, Input, Button, Checkbox, List, SelectPicker, Spinner, ProgressBar, Alert, Badge, Panel, and more) are working as expected.
+## Learn retui — the Wiki
+
+The README is just the "hello world." Everything else lives in the wiki, written to be read in order if you're new, or jumped into if you already know what you're looking for:
+
+| Page                                     | What it covers                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Core Concepts**                        | The 8 ideas behind retui — start here if you're brand new                                        |
+| **Layout System**                        | `Box`, `Row`/`Column`, sizing, gap, padding, align, justify                                      |
+| **Hooks**                                | `UseState`, `UseStateKeyed`, `UseEffect`, `UseContext`, and the focus-aware key hooks            |
+| **Components**                           | Every built-in component (`Button`, `TextInput`, `List`, `Tree`, etc.) and how to build your own |
+| **Styling**                              | Colors, borders, text attributes, and how styles inherit down the tree                           |
+| **Navigation & Focus**                   | Moving between screens, and controlling which component has keyboard focus                       |
+| **Window System**                        | Floating, overlaid windows — dialogs, popups, and modals                                         |
+| **Advanced: Runtime, Renderer & Screen** | How retui actually works internally — the render loop, layout engine, and terminal diffing       |
+
+👉 New here? Read **Core Concepts** first, then **Layout System** and **Hooks** — those three alone are enough to build most simple apps. Come back for **Components**, **Styling**, **Navigation & Focus**, and **Window System** as you need them.
 
 ## Contributing
 
-Contributions are welcome! Please follow these guidelines to keep the codebase consistent.
+Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to get set up, our branch/PR workflow, and code style expectations.
 
-### Getting Started
+Quick version:
 
 ```bash
 git clone https://github.com/subhasundardass/retui
@@ -100,44 +103,8 @@ go mod download
 go test ./...
 ```
 
-### Workflow
-
-1. **Open an issue first** for non-trivial changes to align on the approach before writing code.
-2. **Branch off `main`:**
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-3. **Keep commits focused** — one logical change per commit with a clear message.
-4. **Add tests** for new layout or rendering behaviour in `*_test.go` files.
-5. **Run tests and vet before opening a PR:**
-   ```bash
-   go test ./...
-   go vet ./...
-   ```
-6. **Open a pull request** against `main` with a description of what changed and why.
-
-### Code Style
-
-- Follow standard Go conventions (`gofmt`, `golint`)
-- Keep component functions pure where possible; side effects belong in `UseEffect`
-- Avoid adding dependencies; the stdlib plus the two existing deps cover most needs
-
-### Adding a Component
-
-1. Write the component function in the appropriate file under `retui/components/`.
-2. Use plain typed parameters where possible; reserve `props.Values` for genuinely dynamic data.
-3. Add a runnable demo under `examples/<your-feature>/main.go`.
-4. Document the signature, keyboard contract, and a usage snippet in [`DOCS.md`](DOCS.md) under the relevant section.
-
-### Reporting Bugs
-
-Open a GitHub issue with:
-
-- Go version (`go version`)
-- Terminal emulator and OS
-- Minimal reproduction case
-- What you expected vs. what happened
+Open an issue first for anything non-trivial, so we can align on the approach before you write code.
 
 ## License
 
-MIT — see [LICENSE.md](LICENSE).
+MIT — see [LICENSE.md](LICENSE.md).
