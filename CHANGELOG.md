@@ -6,6 +6,20 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.3.0] - 2026-07-14
+
+### Added
+
+- New Badge component.
+- New Spinner component.
+- New Progress component.
+
+### Changed
+
+- Improved the state system for better flexibility and consistency
+
+---
+
 ## [v0.2.0] - 2026-07-13
 
 ### Added
