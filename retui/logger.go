@@ -113,12 +113,11 @@ func setupLogging() error {
 
 // getLogDir returns the directory for log files
 func getLogDir() string {
-	_, filename, _, ok := runtime.Caller(0)
-	if ok {
-		// Go up two levels to project root
-		return filepath.Join(filepath.Dir(filename), "..")
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
 	}
-	return "./"
+	return wd
 }
 
 // SetDebugMode enables or disables debug mode

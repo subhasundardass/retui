@@ -42,12 +42,13 @@ func BasicInputExample(props retui.Props) retui.Element {
 
 			// Name
 			retui.Box(
-				retui.Props{Gap: 1},
+				retui.Props{Gap: 1, Width: retui.Grow(1)},
 				retui.NewStyle(),
 				retui.Box(retui.Props{Width: retui.Fixed(10)}, retui.NewStyle(), retui.Text("Name", retui.NewStyle())),
 				retui.Box(retui.Props{Width: retui.Fixed(30)}, retui.NewStyle(),
 					components.TextInput().ID("name").Focused(isFocused(0)).Value(name).
 						Placeholder("Enter Name").
+						Style(retui.NewStyle().Bold(true)).
 						OnChange(func(id string, value string) { setName(value) }).
 						Render(),
 				),
@@ -55,7 +56,7 @@ func BasicInputExample(props retui.Props) retui.Element {
 
 			// Age
 			retui.Box(
-				retui.Props{Gap: 1},
+				retui.Props{Gap: 1, Width: retui.Grow(1)},
 				retui.NewStyle(),
 				retui.Box(retui.Props{Width: retui.Fixed(10)}, retui.NewStyle(), retui.Text("Age", retui.NewStyle())),
 				retui.Box(retui.Props{Width: retui.Fixed(30)}, retui.NewStyle(),
@@ -69,7 +70,7 @@ func BasicInputExample(props retui.Props) retui.Element {
 
 			// Price
 			retui.Box(
-				retui.Props{Gap: 1},
+				retui.Props{Gap: 1, Width: retui.Grow(1)},
 				retui.NewStyle(),
 				retui.Box(retui.Props{Width: retui.Fixed(10)}, retui.NewStyle(), retui.Text("Price", retui.NewStyle())),
 				retui.Box(retui.Props{Width: retui.Fixed(30)}, retui.NewStyle(),
