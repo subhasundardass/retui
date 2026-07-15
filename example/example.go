@@ -44,16 +44,16 @@ func Example() retui.Element {
 			Height:    retui.Fit(),
 			Justify:   retui.JustifySpaceBetween,
 		},
-		retui.NewStyle().Foreground(retui.Hex("#535353")).Border(retui.Border{Left: true, Right: true, Bottom: true, Top: true}),
-		retui.Text("Example", retui.NewStyle().Foreground(retui.BrightWhite).Bold(true)),
-		retui.Text("Version: 1.0.0", retui.NewStyle().Foreground(retui.BrightWhite)),
+		retui.NewStyle().Border(retui.Border{Left: true, Right: true, Bottom: true, Top: true}),
+		retui.Text("Example", retui.NewStyle().Bold(true)),
+		retui.Text("Version: 1.0.0", retui.NewStyle()),
 	)
 
 	mainContent := retui.Box(
 		retui.Props{
 			Direction: retui.Column,
 			Padding:   [4]int{0, 0, 0, 0},
-			Width:     retui.Grow(1),
+			Width:     retui.Grow(6),
 			Gap:       1,
 		},
 		retui.NewStyle(),
@@ -61,24 +61,10 @@ func Example() retui.Element {
 	)
 
 	body := retui.Box(
-		retui.Props{
-			Direction: retui.Column,
-			Height:    retui.Grow(1),
-			Width:     retui.Grow(1),
-			Justify:   retui.JustifySpaceBetween,
-			Gap:       0,
-		},
+		retui.Props{Direction: retui.Row, Height: retui.Grow(1), Width: retui.Grow(1)},
 		retui.NewStyle(),
-		retui.Box(
-			retui.Props{},
-			retui.NewStyle(),
-			retui.Box(
-				retui.Props{},
-				retui.NewStyle(),
-				Sidebar(),
-				mainContent,
-			),
-		),
+		retui.Box(retui.Props{Width: retui.Grow(1)}, retui.NewStyle(), Sidebar()),
+		mainContent, // already Width: Grow(7) — set that directly on mainContent's own Props
 	)
 
 	return retui.Box(
@@ -88,7 +74,7 @@ func Example() retui.Element {
 			Width:     retui.Grow(1),
 			Height:    retui.Grow(1),
 		},
-		retui.NewStyle().Background(retui.Black),
+		retui.NewStyle(),
 		header,
 		body,
 		retui.Box(
