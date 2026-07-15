@@ -6,6 +6,20 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.3.0] - 2026-07-14
+
+### Added
+
+- New Badge component.
+- New Spinner component.
+- New Progress component.
+
+### Changed
+
+- Improved the state system for better flexibility and consistency
+
+---
+
 ## [v0.2.0] - 2026-07-13
 
 ### Added
@@ -54,10 +68,11 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ## Version History
 
-| Version | Release Date | Description                   |
-| ------- | ------------ | ----------------------------- |
-| v0.1.0  | 2026-07-11   | Initial public release        |
-| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed |
+| Version | Release Date | Description                    |
+| ------- | ------------ | ------------------------------ |
+| v0.1.0  | 2026-07-11   | Initial public release         |
+| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed  |
+| v0.3.0  | 2026-07-14   | Added Badge, Spinner, Progress |
 
 ---
 
