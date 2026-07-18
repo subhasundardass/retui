@@ -68,7 +68,7 @@ var CurrentTick bool = false
 var exitCh = make(chan struct{}, 1)
 
 // in retui package, app.go or similar
-var WindowKeyDispatch func(key Key) // nil by default
+var WindowKeyDispatch func(key Key) bool // nil by default
 var IsAnyModalOpenFn func() bool
 
 // Exit requests the running application to stop gracefully.
@@ -144,22 +144,29 @@ func (a *App) Run(fn func(props Props) Element, props Props) {
 		case <-exitCh:
 			requestQuit()
 		case key := <-Keys:
-
 			modalOpen := IsAnyModalOpenFn != nil && IsAnyModalOpenFn()
+
 			if key.Code == KeyTab && modalOpen {
 				// Don't expose Tab to CurrentKey at all — prevents any widget
 				// hook (parent or otherwise) from reacting to it this frame.
 				if WindowKeyDispatch != nil {
-					WindowKeyDispatch(key) // your own modal-focus-cycling still runs
+					WindowKeyDispatch(key)
 				}
 				a.Render(fn, props)
-				break // out of the select case
+				break // out of the select case, NOT out of Run()
 			}
 
 			CurrentKey = key
 			// dispatch to focused window, if any
+			consumed := false
 			if WindowKeyDispatch != nil {
-				WindowKeyDispatch(key)
+				consumed = WindowKeyDispatch(key)
+			}
+			if consumed {
+				// Fully handled by the window layer (e.g. modal closed on
+				// Escape) — root/background must never see this key, even
+				// if the modal stack has already changed by now.
+				CurrentKey = Key{}
 			}
 
 			a.Render(fn, props)

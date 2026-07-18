@@ -26,15 +26,19 @@ func CounterExample(props retui.Props) retui.Element {
 	return retui.Box(
 		props,
 		retui.Style{},
-		components.Panel(
-			"State Example", 100,
-			retui.Box(
-				retui.Props{Direction: retui.Row, Gap: 1},
-				retui.Style{},
-				retui.Text("( - )", buttonStyle),
-				retui.Text(strconv.Itoa(count), valueStyle),
-				retui.Text("( + )", buttonStyle),
-			),
-		),
+
+		components.Panel().
+			Header(retui.Text("List Example", retui.NewStyle())).
+			Width(retui.Fixed(100)).
+			Children(
+				retui.Box(
+					retui.Props{Direction: retui.Row, Gap: 1},
+					retui.Style{},
+					retui.Text("( - )", buttonStyle),
+					retui.Text(strconv.Itoa(count), valueStyle),
+					retui.Text("( + )", buttonStyle),
+				),
+			).
+			Render(),
 	)
 }

@@ -32,7 +32,7 @@ type Window struct {
 	StaticContent retui.Element // The content to display inside the window
 	visible       bool          // Whether the window is currently shown
 	focused       bool          // Whether this window has focus
-	onKeyPress    func(key retui.Key)
+	onKeyPress    func(key retui.Key) bool
 	RenderFn      func() retui.Element
 }
 
@@ -158,7 +158,7 @@ func (w *Window) ToggleVisibility() bool {
 
 // OnKeyPress registers a callback invoked whenever this window has focus
 // and receives a key event. Returns the window for chaining.
-func (w *Window) OnKeyPress(fn func(key retui.Key)) *Window {
+func (w *Window) OnKeyPress(fn func(key retui.Key) bool) *Window {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.onKeyPress = fn
@@ -166,15 +166,17 @@ func (w *Window) OnKeyPress(fn func(key retui.Key)) *Window {
 }
 
 // HandleKey is called by the framework's key-dispatch loop when this
-func (w *Window) HandleKey(key retui.Key) {
+func (w *Window) HandleKey(key retui.Key) bool {
 
 	w.mu.RLock()
 	fn := w.onKeyPress
 	w.mu.RUnlock()
 
 	if fn != nil {
-		fn(key)
+		return fn(key)
 	}
+
+	return false
 }
 
 func GetFocusedID() string {

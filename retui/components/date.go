@@ -542,12 +542,13 @@ render:
 	textStyle := config.Style
 	if focused {
 		textStyle = textStyle.
-			Foreground(retui.White).
+			Foreground(retui.BrightWhite).
 			Background(retui.Blue).
 			Bold(true)
 	} else {
 		textStyle = textStyle.
 			Foreground(retui.BrightBlack).
+			Background(retui.Hex("#0c0c0c")).
 			Bold(true)
 	}
 	if !isValid && !focused {

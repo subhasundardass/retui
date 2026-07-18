@@ -40,24 +40,43 @@ func init() {
 	retui.RootRenderWrap = func(root retui.Element) retui.Element {
 		return RenderWindowsOverlay(root)
 	}
-	retui.WindowKeyDispatch = func(key retui.Key) {
+	retui.WindowKeyDispatch = func(key retui.Key) bool {
+
 		if key.Code == retui.KeyTab && globalManager.IsAnyModalOpen() {
 			if globalManager.GetActiveModal() != "" && len(globalManager.modalStack) <= 1 {
 				if win := globalManager.GetWindow(globalManager.GetActiveModal()); win != nil {
-					win.HandleKey(key)
+					return win.HandleKey(key)
 				}
-				return
+				return true
 			}
 			globalManager.FocusNext()
-			return
+			return true
 		}
+
+		// Added: default Escape behavior for modals
+		if key.Code == retui.KeyEscape && globalManager.IsAnyModalOpen() {
+			activeID := globalManager.GetActiveModal()
+			if activeID != "" {
+				win := globalManager.GetWindow(activeID)
+				if win != nil {
+					if win.HandleKey(key) {
+						return true
+					}
+					win.Close()
+				}
+			}
+			return true // ← always hit, regardless of what happened above
+		}
+
 		id := globalManager.GetFocused()
 		if id == "" {
-			return
+			return false
 		}
 		if win := globalManager.GetWindow(id); win != nil {
-			win.HandleKey(key)
+			return win.HandleKey(key)
 		}
+
+		return false
 	}
 }
 
@@ -493,13 +512,18 @@ func GetManager() *WindowManager {
 // CloseAll closes all open windows.
 func CloseAll() {
 	globalManager.mu.Lock()
-	defer globalManager.mu.Unlock()
 	for _, id := range globalManager.stack {
+		if w, ok := globalManager.windows[id]; ok {
+			w.mu.Lock()
+			w.visible = false
+			w.mu.Unlock()
+		}
 		delete(globalManager.windows, id)
 	}
 	globalManager.stack = make([]string, 0)
 	globalManager.modalStack = make([]string, 0)
 	globalManager.setFocusedLocked("")
+	globalManager.mu.Unlock()
 	go globalManager.triggerRender()
 }
 

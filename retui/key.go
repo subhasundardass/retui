@@ -108,9 +108,10 @@ const (
 // Key represents a single keyboard event. Either Code or Rune is set.
 // When Code == KeyPaste, Paste holds the full pasted text.
 type Key struct {
-	Code  KeyCode
-	Rune  rune
-	Paste string
+	Code     KeyCode
+	Rune     rune
+	Paste    string
+	Consumed bool
 }
 
 // ─── Parse Functions ────────────────────────────────────────────────────────
