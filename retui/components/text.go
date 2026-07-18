@@ -39,8 +39,8 @@ func TextInput() *InputField {
 			Placeholder: "",
 			Width:       30,
 			Style:       retui.NewStyle(),
-			Prefix:      "[ ",
-			Suffix:      " ]",
+			Prefix:      "",
+			Suffix:      "",
 			MinLength:   0,
 			MaxLength:   0,
 			OnChange:    nil,
@@ -272,12 +272,13 @@ render:
 	textStyle := config.Style
 	if focused {
 		textStyle = textStyle.
-			Foreground(retui.White).
+			Foreground(retui.BrightWhite).
 			Background(retui.Blue).
 			Bold(true)
 	} else {
 		textStyle = textStyle.
 			Foreground(retui.BrightBlack).
+			Background(retui.Hex("#0c0c0c")).
 			Bold(true)
 	}
 

@@ -24,14 +24,16 @@ func ListExample(props retui.Props) retui.Element {
 	return retui.Box(
 		retui.Props{},
 		retui.NewStyle(),
-		components.Panel(
-			"List Example",
-			100, // Width should be reasonable
-			retui.Box(
-				retui.Props{},
-				retui.NewStyle(),
-				list,
-			),
-		),
+		components.Panel().
+			Header(retui.Text("List Example", retui.NewStyle())).
+			Width(retui.Fixed(100)).
+			Children(
+				retui.Box(
+					retui.Props{},
+					retui.NewStyle(),
+					list,
+				),
+			).
+			Render(),
 	)
 }

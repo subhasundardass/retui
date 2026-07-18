@@ -27,23 +27,16 @@ var KeyedState = map[string]any{}
 var pendingRender bool
 
 func UseState[T any](initial T) (T, func(T)) {
-
 	idx := StateCursor
 	StateCursor++
 
 	if idx >= len(State) {
-		// Debugf("CREATE idx=%d type=%T", idx, initial)
 		State = append(State, initial)
 	} else {
-		// Debugf("READ idx=%d expected=%T stored=%T",
-		// 	idx,
-		// 	initial,
-		// 	State[idx],
-		// )
-	}
-
-	if idx >= len(State) {
-		State = append(State, initial)
+		// State exists, but may belong to another screen.
+		if _, ok := State[idx].(T); !ok {
+			State[idx] = initial
+		}
 	}
 
 	current := State[idx].(T)

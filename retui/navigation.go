@@ -1,261 +1,291 @@
 package retui
 
-import (
-	"sync"
-)
+import "sync"
 
-// ScreenStack manages the navigation state for a TUI application.
-// It provides thread-safe operations for pushing, popping, and
-// managing screens.
+// ScreenParams contains navigation parameters passed to a screen.
+//
+// Unlike component Props, ScreenParams belong to the navigation system
+// and are associated with a screen while it is active.
+//
+// Example:
+//
+//	retui.PushScreen("ledger_list", retui.ScreenParams{
+//	    "groupId": 10,
+//	})
+type ScreenParams map[string]any
+
+// ScreenRoute represents one entry in the navigation stack.
+//
+// Each entry stores both the screen identifier and any navigation
+// parameters supplied when the screen was pushed.
+type ScreenRoute struct {
+	ID     string
+	Params ScreenParams
+}
+
+// ScreenStack manages the navigation history for a RetUI application.
 //
 // ScreenStack is safe for concurrent use.
 type ScreenStack struct {
 	mu          sync.RWMutex
-	stack       []string
-	currentPage string
+	stack       []ScreenRoute
+	currentPage ScreenRoute
 }
 
-// NewScreenStack creates a new screen stack with the given root screen.
+// NewScreenStack creates a new navigation stack.
+//
+// The supplied screen becomes the root screen.
 //
 // Example:
 //
 //	nav := retui.NewScreenStack("home")
-//	nav.PushScreen("settings")
-//	current := nav.Current() // "settings"
 func NewScreenStack(rootScreen string) *ScreenStack {
+	root := ScreenRoute{
+		ID:     rootScreen,
+		Params: nil,
+	}
+
 	return &ScreenStack{
-		stack:       []string{rootScreen},
-		currentPage: rootScreen,
+		stack:       []ScreenRoute{root},
+		currentPage: root,
 	}
 }
 
-// PushScreen adds a screen to the top of the stack and makes it current.
+// PushScreen pushes a new screen onto the navigation stack.
+//
+// Params may be nil.
 //
 // Example:
 //
-//	nav.PushScreen("profile")
-func (n *ScreenStack) PushScreen(screenID string) {
+//	nav.PushScreen("ledger_list", retui.ScreenParams{
+//	    "groupId": 10,
+//	})
+func (n *ScreenStack) PushScreen(screenID string, params ScreenParams) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.stack = append(n.stack, screenID)
-	n.currentPage = screenID
+
+	route := ScreenRoute{
+		ID:     screenID,
+		Params: params,
+	}
+
+	n.stack = append(n.stack, route)
+	n.currentPage = route
 }
 
-// PopScreen removes the top screen and returns the new current screen ID.
-// If the stack has only one entry it stays — you can never pop the root.
+// PopScreen removes the top screen.
 //
-// Example:
-//
-//	if previous := nav.PopScreen(); previous != "home" {
-//	    // Handle return
-//	}
+// The root screen cannot be removed.
 func (n *ScreenStack) PopScreen() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
 	if len(n.stack) <= 1 {
-		return n.stack[0]
+		return n.stack[0].ID
 	}
+
 	n.stack = n.stack[:len(n.stack)-1]
-	top := n.stack[len(n.stack)-1]
-	n.currentPage = top
-	return top
+	n.currentPage = n.stack[len(n.stack)-1]
+
+	return n.currentPage.ID
 }
 
-// ReplaceScreen replaces the top of the stack with a new screen.
-// Use this for redirects where you do not want the user to go back.
+// ReplaceScreen replaces the current screen.
 //
-// Example:
-//
-//	nav.ReplaceScreen("dashboard") // Replaces current with dashboard
-func (n *ScreenStack) ReplaceScreen(screenID string) {
+// Navigation history is preserved except for the top entry.
+func (n *ScreenStack) ReplaceScreen(screenID string, params ScreenParams) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if len(n.stack) == 0 {
-		n.stack = []string{screenID}
-	} else {
-		n.stack[len(n.stack)-1] = screenID
+
+	route := ScreenRoute{
+		ID:     screenID,
+		Params: params,
 	}
-	n.currentPage = screenID
+
+	if len(n.stack) == 0 {
+		n.stack = []ScreenRoute{route}
+	} else {
+		n.stack[len(n.stack)-1] = route
+	}
+
+	n.currentPage = route
 }
 
-// Current returns the ID of the currently active screen.
-//
-// Example:
-//
-//	current := nav.Current()
-//	if current == "settings" {
-//	    // Render settings
-//	}
+// Current returns the current screen ID.
 func (n *ScreenStack) Current() string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	if len(n.stack) == 0 {
 		return ""
 	}
-	return n.stack[len(n.stack)-1]
+
+	return n.currentPage.ID
 }
 
-// Stack returns a copy of the current stack.
-// A copy is returned so callers cannot mutate internal state.
+// CurrentParams returns the navigation parameters for the current screen.
 //
-// Example:
+// Returns nil if no parameters were supplied.
+func (n *ScreenStack) CurrentParams() ScreenParams {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	if len(n.stack) == 0 {
+		return nil
+	}
+
+	return n.currentPage.Params
+}
+
+// Stack returns the navigation history.
 //
-//	history := nav.Stack()
-//	for i, screen := range history {
-//	    fmt.Printf("%d: %s\n", i, screen)
-//	}
+// A copy is returned so callers cannot modify the internal stack.
 func (n *ScreenStack) Stack() []string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	cp := make([]string, len(n.stack))
-	copy(cp, n.stack)
+
+	for i, route := range n.stack {
+		cp[i] = route.ID
+	}
+
 	return cp
 }
 
-// Size returns how many screens are on the stack.
-//
-// Example:
-//
-//	if nav.Size() > 1 {
-//	    // Show back button
-//	}
+// Size returns the number of screens currently on the stack.
 func (n *ScreenStack) Size() int {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	return len(n.stack)
 }
 
-// CanPop returns true when there is more than one screen on the stack.
-// Use this to decide whether to show a back button.
-//
-// Example:
-//
-//	if nav.CanPop() {
-//	    renderBackButton()
-//	}
+// CanPop reports whether the current screen can navigate back.
 func (n *ScreenStack) CanPop() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	return len(n.stack) > 1
 }
 
-// Reset clears the stack and sets a single root screen.
-// Use this on logout or when navigating to a completely new flow.
-//
-// Example:
-//
-//	nav.Reset("login") // Clears everything and goes to login
+// Reset clears the stack and creates a new root screen.
 func (n *ScreenStack) Reset(rootScreenID string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.stack = []string{rootScreenID}
-	n.currentPage = rootScreenID
+
+	root := ScreenRoute{
+		ID: rootScreenID,
+	}
+
+	n.stack = []ScreenRoute{root}
+	n.currentPage = root
 }
 
-// IsEmpty returns true if the stack is empty.
+// IsEmpty reports whether the navigation stack is empty.
 func (n *ScreenStack) IsEmpty() bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	return len(n.stack) == 0
 }
 
-// Clear empties the stack completely.
-// Use with caution - this leaves the stack in an invalid state
-// until a new screen is pushed or reset.
+// Clear removes every screen from the navigation stack.
+//
+// Normally Reset should be preferred.
 func (n *ScreenStack) Clear() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.stack = []string{}
-	n.currentPage = ""
-}
 
-// ─── Global default instance ───────────────────────────────────────────
-//
-// Mirrors the FocusManager pattern already used in this package: the type
-// itself stays instantiable/testable (see NewScreenStack above), while a
-// default global instance backs the exported free functions below, so
-// Root() and the rest of the app can call retui.PushScreen(...) directly
-// without threading a *ScreenStack through every call site by hand.
+	n.stack = nil
+	n.currentPage = ScreenRoute{}
+}
 
 var globalScreens = NewScreenStack("home")
 
-// SetInitialScreen sets the root screen on the global stack. Call this
-// once during startup, before the first Render — e.g.
-//
-//	retui.SetInitialScreen(cfg.DefaultPage)
-//
-// Skip this if "home" is already your intended root screen ID.
+// SetInitialScreen sets the root screen.
 func SetInitialScreen(id string) {
 	globalScreens.Reset(id)
 }
 
-// PushScreen adds a screen to the top of the global stack and makes it
-// current. Resets component hook state and schedules a re-render so the
-// new screen appears immediately.
-func PushScreen(id string) {
-	globalScreens.PushScreen(id)
+// PushScreen pushes a new screen onto the global navigation stack.
+//
+// The params argument is optional.
+//
+// Example:
+//
+//	retui.PushScreen("ledger_list")
+//
+//	retui.PushScreen("ledger_list", retui.ScreenParams{
+//	    "groupId": 5,
+//	})
+func PushScreen(id string, params ...ScreenParams) {
+	var p ScreenParams
+
+	if len(params) > 0 {
+		p = params[0]
+	}
+
+	globalScreens.PushScreen(id, p)
 	onScreenChanged()
 }
 
-// PopScreen removes the top screen from the global stack and returns the
-// new current screen ID. No-op (returns the unchanged root) if only one
-// screen remains — in that case no reset/re-render is triggered either,
-// since nothing actually changed.
+// PopScreen navigates back.
 func PopScreen() string {
 	before := globalScreens.Current()
 	top := globalScreens.PopScreen()
-	if top != before {
+
+	if before != top {
 		onScreenChanged()
 	}
+
 	return top
 }
 
-// ReplaceScreen swaps the top of the global stack for a new screen. Use
-// this for redirects where the user shouldn't be able to navigate Back
-// to whatever screen is being replaced.
-func ReplaceScreen(id string) {
-	globalScreens.ReplaceScreen(id)
+// ReplaceScreen replaces the current screen.
+func ReplaceScreen(id string, params ...ScreenParams) {
+	var p ScreenParams
+
+	if len(params) > 0 {
+		p = params[0]
+	}
+
+	globalScreens.ReplaceScreen(id, p)
 	onScreenChanged()
 }
 
-// ResetScreenStack clears all history on the global stack and sets a
-// single root screen. Use this on logout, or when starting an entirely
-// new navigation flow.
+// ResetScreenStack clears navigation history.
 func ResetScreenStack(rootID string) {
 	globalScreens.Reset(rootID)
 	onScreenChanged()
 }
 
-// CurrentScreen returns the ID of the currently active screen on the
-// global stack.
+// CurrentScreen returns the current screen ID.
 func CurrentScreen() string {
 	return globalScreens.Current()
 }
 
-// ScreenStackSnapshot returns a copy of the global navigation stack,
-// root first.
+// CurrentScreenParams returns the parameters associated with the
+// currently active screen.
+func CurrentScreenParams() ScreenParams {
+	return globalScreens.CurrentParams()
+}
+
+// ScreenStackSnapshot returns a copy of the navigation history.
 func ScreenStackSnapshot() []string {
 	return globalScreens.Stack()
 }
 
-// ScreenStackSize returns how many screens are on the global stack.
+// ScreenStackSize returns the number of screens on the stack.
 func ScreenStackSize() int {
 	return globalScreens.Size()
 }
 
-// CanPopScreen reports whether there is a screen to go Back to on the
-// global stack. Use this to decide whether to show a back button.
+// CanPopScreen reports whether Back navigation is possible.
 func CanPopScreen() bool {
 	return globalScreens.CanPop()
 }
 
-// onScreenChanged resets per-component hook state — so the incoming
-// screen never inherits stale UseState/UseEffect slots from whatever was
-// showing before — and schedules an extra render pass so the new screen
-// appears immediately, rather than waiting for the next key/tick/resize
-// event. Every mutating free function above calls this, so a manual
-// UseScreenReset(currentID) call in Root() is no longer necessary as long
-// as all screen transitions go through this file.
 func onScreenChanged() {
 	ResetComponentState()
 	pendingRender = true

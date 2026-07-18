@@ -54,7 +54,6 @@ func (f *FocusManager) Focus(id string) {
 	}
 
 	f.current = id
-	Debug("SetFocus current is now: " + f.current)
 }
 
 // Current returns the currently focused component ID.
