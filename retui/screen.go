@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/mattn/go-runewidth"
@@ -223,8 +224,10 @@ func (s Screen) Stop() {
 
 	fmt.Fprintf(s.out, "\033[?2004l") // bracketed paste off
 	fmt.Fprintf(s.out, "\033[?25h")   // show cursor
-	term.Restore(int(os.Stdin.Fd()), s.oldState)
-
+	if err := term.Restore(int(os.Stdin.Fd()), s.oldState); err != nil {
+		// Log or handle the error
+		log.Printf("failed to restore terminal: %v", err)
+	}
 }
 
 // SetCell writes value/style into cell (x, y). It diffs against the

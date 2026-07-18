@@ -6,6 +6,25 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.4.0] - 2026-07-18
+
+### Added
+
+- New Table component.
+- New Select Picker component.
+- Added Title Element in Panel Component
+- Test file added
+
+### Updates
+
+- Update UseState() - Verify the type before cast.
+- Update Navigation. Now PushScreen will accept params
+- Propagation control - Stop keys from bubbling up
+- Global handlers conflict - Multiple handlers fighting
+- Update Window Documentation (https://github.com/subhasundardass/retui/wiki/Window-System)
+
+---
+
 ## [v0.3.0] - 2026-07-14
 
 ### Added
@@ -70,9 +89,10 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 | Version | Release Date | Description                    |
 | ------- | ------------ | ------------------------------ |
-| v0.1.0  | 2026-07-11   | Initial public release         |
-| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed  |
+| v0.4.0  | 2026-07-18   | Added Table, Select Picker     |
 | v0.3.0  | 2026-07-14   | Added Badge, Spinner, Progress |
+| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed  |
+| v0.1.0  | 2026-07-11   | Initial public release         |
 
 ---
 
