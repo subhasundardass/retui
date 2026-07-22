@@ -133,12 +133,16 @@ func Hex(color string) Color {
 	g, _ := strconv.ParseUint(color[2:4], 16, 8)
 	b, _ := strconv.ParseUint(color[4:6], 16, 8)
 
-	return Color{
-		Type: ColorRGB,
-		R:    uint8(r),
-		G:    uint8(g),
-		B:    uint8(b),
+	if len(color) != 6 {
+		return Color{
+			Type: ColorRGB,
+			R:    uint8(r),
+			G:    uint8(g),
+			B:    uint8(b),
+		}
 	}
+
+	return Color{}
 }
 
 func ANSI256(color uint8) Color {

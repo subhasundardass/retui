@@ -22,6 +22,14 @@ import (
 // It starts true and is cleared automatically the first time Value() is
 // called on the builder, or the first time the user commits a parseable
 // number. When Empty is true, the placeholder is shown instead of "0".
+//
+// Select-all-on-focus: like a typical web <input>, gaining focus selects
+// the entire current value. While selected, typing a character replaces
+// the whole value instead of inserting at the cursor, and Backspace/
+// Delete clear it entirely. Left/Right/Home/End instead just collapse the
+// selection to that boundary, matching standard browser behavior. Set
+// SelectAllOnFocus to false to disable this and keep the cursor wherever
+// it was, like a plain text field.
 type NumberInputConfig struct {
 	ID          string
 	Value       float64
@@ -41,6 +49,11 @@ type NumberInputConfig struct {
 	// Set to false when the surrounding form/list also binds Up/Down to
 	// move focus between fields, so a single keypress can't both step
 	// this field's value and move focus off it in the same instant.
+
+	// SelectAllOnFocus enables web-style select-all behavior on focus.
+	// Defaults to true.
+	SelectAllOnFocus bool
+
 	OnChange   func(id string, value float64)
 	OnKeyPress func(id string, key retui.Key) bool
 	OnFocus    func(id string)
@@ -62,26 +75,27 @@ type NumberInputField struct {
 func NumberInput() *NumberInputField {
 	return &NumberInputField{
 		config: NumberInputConfig{
-			ID:          "",
-			Value:       0,
-			Empty:       true,
-			Placeholder: "0",
-			Width:       30,
-			Style:       retui.NewStyle(),
-			Prefix:      "[ ",
-			Suffix:      " ]",
-			HasMin:      false,
-			Min:         0,
-			HasMax:      false,
-			Max:         0,
-			Step:        1,
-			Decimals:    0,
-			ArrowStep:   false,
-			OnChange:    nil,
-			OnKeyPress:  nil,
-			OnFocus:     nil,
-			OnBlur:      nil,
-			OnSubmit:    nil,
+			ID:               "",
+			Value:            0,
+			Empty:            true,
+			Placeholder:      "0",
+			Width:            30,
+			Style:            retui.NewStyle(),
+			Prefix:           "",
+			Suffix:           "",
+			HasMin:           false,
+			Min:              0,
+			HasMax:           false,
+			Max:              0,
+			Step:             1,
+			Decimals:         0,
+			ArrowStep:        false,
+			SelectAllOnFocus: true,
+			OnChange:         nil,
+			OnKeyPress:       nil,
+			OnFocus:          nil,
+			OnBlur:           nil,
+			OnSubmit:         nil,
 		},
 		focused: false,
 	}
@@ -174,6 +188,13 @@ func (n *NumberInputField) Decimals(v int) *NumberInputField {
 // field at once.
 func (n *NumberInputField) ArrowStep(v bool) *NumberInputField {
 	n.config.ArrowStep = v
+	return n
+}
+
+// SelectAllOnFocus toggles web-style select-all-on-focus behavior.
+// Enabled by default; pass false to keep the cursor position instead.
+func (n *NumberInputField) SelectAllOnFocus(v bool) *NumberInputField {
+	n.config.SelectAllOnFocus = v
 	return n
 }
 
@@ -326,6 +347,13 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 	pos, setPos := retui.UseState(len([]rune(displayValue)))
 	inputText, setInputText := retui.UseState(displayValue)
 
+	// wasFocused lets us detect the exact frame focus is GAINED (an edge),
+	// as opposed to every frame while focused is already true — without
+	// this, select-all would re-fire every render and wipe out whatever
+	// the user just typed.
+	wasFocused, setWasFocused := retui.UseState(false)
+	selected, setSelected := retui.UseState(false)
+
 	// While not focused, the display always reflects the committed
 	// config.Value (or the placeholder, if Empty). Guard the setters so we
 	// don't trigger a state update - and potential re-render - every frame.
@@ -354,6 +382,33 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 		pos = 0
 	}
 
+	// Select-all-on-focus: fires exactly once, on the frame focus is
+	// gained. Selecting nothing for an empty field is harmless (there's
+	// nothing to select or replace).
+	//
+	// justGainedFocus is captured BEFORE wasFocused is updated below, and
+	// is used further down to skip key handling entirely on this render.
+	// Without that, retui.CurrentKey still holds whatever key caused focus
+	// to move here (Tab, Down, etc.) — and since that key almost never
+	// matches Left/Right/Home/End/Backspace/Delete, it would fall into the
+	// "deselect" default case in the selected-handling switch below,
+	// silently undoing the selection in the same render it was set.
+	justGainedFocus := focused && !wasFocused
+
+	if focused && !wasFocused {
+		wasFocused = true
+		setWasFocused(true)
+		if config.SelectAllOnFocus {
+			selected = true
+			setSelected(true)
+		}
+	} else if !focused && wasFocused {
+		wasFocused = false
+		setWasFocused(false)
+		selected = false
+		setSelected(false)
+	}
+
 	// Trigger focus/blur events
 	if focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
@@ -362,16 +417,63 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 		config.OnBlur(config.ID)
 	}
 
-	// Handle keyboard input when focused
-	if focused {
+	// Handle keyboard input when focused. justGainedFocus is excluded so
+	// the key that caused focus to move here isn't also treated as an
+	// edit/deselect action inside this field (see comment above).
+	if focused && !justGainedFocus {
 		key := retui.CurrentKey
-		runes := []rune(inputText)
 
 		if config.OnKeyPress != nil && config.ID != "" {
 			if config.OnKeyPress(config.ID, key) {
 				goto render
 			}
 		}
+
+		// While the whole value is selected, keys behave like a web
+		// input's selection: navigation keys collapse the selection to a
+		// boundary; Backspace/Delete clear everything; any other key
+		// (character input, Up/Down, Enter) deselects and — for character
+		// input specifically — replaces the whole buffer instead of
+		// inserting into it. The main switch below then runs against
+		// whatever inputText/pos this leaves behind.
+		if selected && key.Code != retui.KeyNone {
+			switch key.Code {
+			case retui.KeyLeft, retui.KeyHome:
+				pos = 0
+				setPos(0)
+				selected = false
+				setSelected(false)
+
+			case retui.KeyRight, retui.KeyEnd:
+				pos = len([]rune(inputText))
+				setPos(pos)
+				selected = false
+				setSelected(false)
+
+			case retui.KeyBackspace, retui.KeyDelete:
+				inputText = ""
+				setInputText("")
+				pos = 0
+				setPos(0)
+				selected = false
+				setSelected(false)
+				applyParsedValue(config, "")
+				goto render
+
+			default:
+				if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 {
+					// Replace-all: collapse to an empty buffer so the
+					// character-insertion case below inserts into
+					// nothing, instead of editing the old value in place.
+					inputText = ""
+					pos = 0
+				}
+				selected = false
+				setSelected(false)
+			}
+		}
+
+		runes := []rune(inputText)
 
 		switch key.Code {
 		case retui.KeyLeft:
@@ -520,13 +622,22 @@ render:
 		display = config.Placeholder
 	}
 
-	// Apply styles
+	// Apply styles. The selected state gets its own distinct highlight so
+	// it reads as "everything will be replaced" rather than a normal
+	// cursor position.
 	textStyle := config.Style
 	if focused {
-		textStyle = textStyle.
-			Foreground(retui.White).
-			Background(retui.Blue).
-			Bold(true)
+		if selected {
+			textStyle = textStyle.
+				Foreground(retui.Black).
+				Background(retui.Cyan).
+				Bold(true)
+		} else {
+			textStyle = textStyle.
+				Foreground(retui.White).
+				Background(retui.Blue).
+				Bold(true)
+		}
 	} else {
 		textStyle = textStyle.
 			Foreground(retui.BrightBlack).
@@ -562,9 +673,10 @@ render:
 			Foreground(retui.BrightBlack)
 	}
 
-	// Add cursor
+	// Add cursor — skipped while selected, since the whole-text highlight
+	// above already communicates "this will be replaced" without a caret.
 	cursorDisplay := display
-	if focused {
+	if focused && !selected {
 		displayRunes := []rune(display)
 		// If showing the placeholder (field is genuinely empty), park the
 		// cursor at the start rather than at whatever pos was left at.
@@ -630,8 +742,8 @@ func renderNumberError(config *NumberInputConfig, msg string) retui.Element {
 // ─── Example Usage ──────────────────────────────────────────────────────
 
 func ExampleNumberUsage() retui.Element {
-	// Integer input. Min(0) is enforced correctly now, unlike a bare
-	// zero-value check would allow.
+	// Integer input. Min(0) is enforced correctly, and gaining focus
+	// selects the whole value so typing a digit immediately replaces it.
 	ageInput := NumberInput().
 		ID("age").
 		Placeholder("Enter age").
