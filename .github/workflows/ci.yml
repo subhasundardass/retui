@@ -47,7 +47,7 @@ jobs:
           fi
 
       - name: Test (race detector + coverage)
-        run: go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
+        run: go test ./... -v -race  -covermode=atomic
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

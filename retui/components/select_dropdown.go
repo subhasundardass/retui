@@ -214,18 +214,14 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 					closeOverlay()
 
 				case retui.KeyEnter, retui.KeySpace:
-
 					if highlighted >= 0 && highlighted < len(options) {
-
 						opt := options[highlighted]
-
 						if !opt.Disabled {
 							config.Value = opt.Value
 							if config.OnChange != nil && config.ID != "" {
 								config.OnChange(config.ID, opt.Value)
 							}
 						}
-
 					}
 					closeOverlay()
 
@@ -257,6 +253,8 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 					closeOverlay()
 
 				default:
+					// KeySpace falls through to here now, same as any other printable
+					// rune — it edits filterText instead of confirming a selection.
 					if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 {
 						filterText = filterText + string(key.Rune)
 						highlighted = firstEnabledIndex(filterOptions(config, filterText))
@@ -320,8 +318,11 @@ func buildSelectElement(
 	}
 
 	selectedLabel := config.Placeholder
+	target := strings.TrimSpace(config.Value)
+
 	for _, opt := range config.Options {
-		if opt.Value == config.Value {
+		if strings.TrimSpace(opt.Value) == target {
+
 			selectedLabel = opt.Label
 			break
 		}
@@ -505,9 +506,12 @@ func buildOptionsList(config *SelectConfig, options []SelectOption, highlighted 
 		switch {
 		case opt.Disabled:
 			style = retui.NewStyle().Foreground(retui.BrightBlack)
+			if i == highlighted {
+				// still show it's the cursor position, but visibly disabled
+				style = retui.NewStyle().Foreground(retui.BrightBlack).Background(retui.Hex("#1a1a1a")).Italic(true)
+			}
 		case i == highlighted:
 			style = retui.NewStyle().Background(retui.Blue).Foreground(retui.White).Bold(true)
-			prefix = "▶ "
 		case opt.Value == config.Value:
 			prefix = "✓ "
 		}
@@ -530,8 +534,9 @@ func buildOptionsList(config *SelectConfig, options []SelectOption, highlighted 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 func findValueIndex(options []SelectOption, value string) (int, bool) {
+	value = strings.TrimSpace(value)
 	for i, opt := range options {
-		if opt.Value == value {
+		if strings.TrimSpace(opt.Value) == value {
 			return i, true
 		}
 	}
@@ -575,11 +580,11 @@ func filterOptions(config *SelectConfig, query string) []SelectOption {
 		return config.Options
 	}
 	if config.OnFilter != nil {
-
-		return config.OnFilter(config.ID, query)
+		return config.OnFilter(config.ID, query) // ← DB search
 	}
+	// falls through to this instead:
 	var out []SelectOption
-	for _, opt := range config.Options {
+	for _, opt := range config.Options { // ← only the 10 already loaded!
 		if strings.Contains(strings.ToLower(opt.Label), strings.ToLower(query)) {
 			out = append(out, opt)
 		}

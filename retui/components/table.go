@@ -12,7 +12,7 @@ type TableField struct {
 	config tableConfig
 }
 
-const BORDER_COLOR = "#535353"
+const BORDER_COLOR = "#1d1d1d"
 
 type tableConfig struct {
 	ID            string
@@ -306,7 +306,7 @@ func (t *TableField) Render() retui.Element {
 		widthSizing = retui.Fixed(cfg.width)
 	}
 
-	heightSizing := retui.Fit()
+	heightSizing := retui.Grow(1)
 	if cfg.explicitHeight && cfg.height > 0 {
 		heightSizing = retui.Fixed(cfg.height)
 	}
