@@ -323,37 +323,87 @@ type KeyScanner struct {
 	pasteBuf []byte
 }
 
+// nextSequence returns the first complete key sequence and how many bytes it uses.
+func nextSequence(b []byte) ([]byte, int) {
+	if len(b) == 0 {
+		return nil, 0
+	}
+
+	// Normal key
+	if b[0] != 0x1B {
+		return b[:1], 1
+	}
+
+	// ESC only
+	if len(b) == 1 {
+		return b[:1], 1
+	}
+
+	// Alt + printable
+	if b[1] != '[' && b[1] != 'O' {
+		return b[:2], 2
+	}
+
+	// CSI / SS3 sequence
+	for i := 2; i < len(b); i++ {
+		c := b[i]
+
+		// ANSI final byte
+		if (c >= '@' && c <= '~') || c == '~' {
+			return b[:i+1], i + 1
+		}
+	}
+
+	// Incomplete sequence
+	return nil, 0
+}
+
 // Feed consumes one chunk of stdin bytes and returns any complete Key events.
 func (s *KeyScanner) Feed(b []byte) []Key {
 	var keys []Key
+
 	for len(b) > 0 {
+
+		// Bracketed paste
 		if s.inPaste {
 			s.pasteBuf = append(s.pasteBuf, b...)
 			b = nil
+
 			idx := bytes.Index(s.pasteBuf, pasteEnd)
 			if idx < 0 {
 				return keys
 			}
-			pasted := string(s.pasteBuf[:idx])
+
+			text := string(s.pasteBuf[:idx])
 			rest := append([]byte(nil), s.pasteBuf[idx+len(pasteEnd):]...)
+
 			s.pasteBuf = nil
 			s.inPaste = false
-			keys = append(keys, Key{Code: KeyPaste, Paste: pasted})
+
+			keys = append(keys, Key{
+				Code:  KeyPaste,
+				Paste: text,
+			})
+
 			b = rest
 			continue
 		}
+
 		if bytes.HasPrefix(b, pasteStart) {
 			b = b[len(pasteStart):]
 			s.inPaste = true
 			continue
 		}
-		consumed := 1
-		if b[0] == 0x1B && len(b) >= 3 && (b[1] == '[' || b[1] == 'O') {
-			consumed = 3
+
+		seq, n := nextSequence(b)
+		if n == 0 {
+			break // wait for remaining bytes
 		}
-		keys = append(keys, ParseKey(b[:consumed]))
-		b = b[consumed:]
+
+		keys = append(keys, ParseKey(seq))
+		b = b[n:]
 	}
+
 	return keys
 }
 

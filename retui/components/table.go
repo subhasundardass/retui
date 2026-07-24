@@ -12,7 +12,7 @@ type TableField struct {
 	config tableConfig
 }
 
-const BORDER_COLOR = "#535353"
+const BORDER_COLOR = "#1d1d1d"
 
 type tableConfig struct {
 	ID            string
@@ -48,8 +48,21 @@ type tableConfig struct {
 
 	selectable bool
 
+	// width/height are the table's resolved size. They can still be set
+	// explicitly via .Width()/.Height() for a hard override, but normally
+	// they're filled in automatically from the real space the layout
+	// engine assigns this component — see Render()'s use of
+	// retui.Element.ContentBuilder, which receives the resolved
+	// width/height once the surrounding Box has been laid out.
 	width  int
 	height int
+
+	// explicitWidth/explicitHeight track whether .Width()/.Height() were
+	// called by the caller, so Render() knows whether to advertise a
+	// Fixed sizing (respect the override) or Grow/Fit (fill/auto, and
+	// accept whatever the parent assigns).
+	explicitWidth  bool
+	explicitHeight bool
 }
 
 // NewTable creates a new table with default configuration
@@ -229,19 +242,33 @@ func (t *TableField) Selectable(selectable bool) *TableField {
 	return t
 }
 
-// Width sets the table width
+// Width sets an explicit, hard-coded table width. Optional — if you don't
+// call this, the table automatically fills whatever width its parent
+// (e.g. a Box) assigns it.
 func (t *TableField) Width(width int) *TableField {
 	t.config.width = width
+	t.config.explicitWidth = true
 	return t
 }
 
-// Height sets the table height
+// Height sets an explicit, hard-coded table height (enables row
+// scrolling/truncation to fit). Optional — if you don't call this, the
+// table shows all rows and sizes itself naturally to fit its content.
 func (t *TableField) Height(height int) *TableField {
 	t.config.height = height
+	t.config.explicitHeight = true
 	return t
 }
 
-// Render renders the table as a retui.Element
+// Render renders the table as a retui.Element.
+//
+// It does NOT build the table's rows/columns immediately. Column widths
+// depend on the space actually available, which isn't known yet at this
+// point — it depends on whatever parent (e.g. Box) this element ends up
+// inside, and that's only resolved during the layout pass. So Render
+// returns a placeholder Element carrying a ContentBuilder: the renderer
+// calls it back with the real resolved width/height once layout knows
+// them, and *that's* when t.build() actually runs.
 func (t *TableField) Render() retui.Element {
 	cfg := &t.config
 
@@ -274,7 +301,35 @@ func (t *TableField) Render() retui.Element {
 
 	cfg.selectedIndex = selected
 
-	return t.build()
+	widthSizing := retui.Grow(1)
+	if cfg.explicitWidth && cfg.width > 0 {
+		widthSizing = retui.Fixed(cfg.width)
+	}
+
+	heightSizing := retui.Grow(1)
+	if cfg.explicitHeight && cfg.height > 0 {
+		heightSizing = retui.Fixed(cfg.height)
+	}
+
+	return retui.Element{
+		Type: retui.ElementBox,
+		Layout: retui.LayoutProps{
+			Direction:    retui.Column,
+			WidthSizing:  widthSizing,
+			HeightSizing: heightSizing,
+		},
+		ContentBuilder: func(width, height int) retui.Element {
+			// Only adopt the resolved size when the caller didn't pin an
+			// explicit one — an explicit .Width()/.Height() always wins.
+			if !cfg.explicitWidth {
+				cfg.width = width
+			}
+			if !cfg.explicitHeight {
+				cfg.height = height
+			}
+			return t.build()
+		},
+	}
 }
 
 // build constructs the table element
@@ -381,6 +436,12 @@ func (t *TableField) calculateColumnWidths(colCount int) []int {
 		return widths
 	}
 
+	// cfg.width is now always populated before build() runs — either the
+	// caller's explicit .Width(n), or the real width the layout engine
+	// assigned this table's parent Box (see Render()'s ContentBuilder).
+	// The terminal-width fallback below only exists as a last-resort
+	// safety net (e.g. build() invoked outside the normal render path)
+	// and should not be relied on in ordinary usage.
 	availableWidth := cfg.width
 	if availableWidth <= 0 {
 		availableWidth = retui.StdOutScreen.Width()

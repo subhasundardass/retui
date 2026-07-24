@@ -6,6 +6,23 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.5.0] - 2026-07-24
+
+### Added
+
+- Added Percent sizing mode
+- Added overflow clamping
+- Added ContentBuilder in Element
+- Added resolveDeferred() + hasDeferred() in renderer, called at the top of Render()
+- Select Dropdown with Filter (Static and Api)
+- Added explicitWidth/explicitHeight bools on tableConfig
+
+### Updates
+
+- Changed: Render() no longer calls t.build() directly
+
+---
+
 ## [v0.4.0] - 2026-07-18
 
 ### Added
@@ -87,12 +104,13 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ## Version History
 
-| Version | Release Date | Description                    |
-| ------- | ------------ | ------------------------------ |
-| v0.4.0  | 2026-07-18   | Added Table, Select Picker     |
-| v0.3.0  | 2026-07-14   | Added Badge, Spinner, Progress |
-| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed  |
-| v0.1.0  | 2026-07-11   | Initial public release         |
+| Version | Release Date | Description                                 |
+| ------- | ------------ | ------------------------------------------- |
+| v0.5.0  | 2026-07-24   | Percent, overflow clamping, Select Dropdown |
+| v0.4.0  | 2026-07-18   | Added Table, Select Picker                  |
+| v0.3.0  | 2026-07-14   | Added Badge, Spinner, Progress              |
+| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed               |
+| v0.1.0  | 2026-07-11   | Initial public release                      |
 
 ---
 

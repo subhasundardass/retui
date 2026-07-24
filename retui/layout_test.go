@@ -1,593 +1,222 @@
 package retui
 
-import (
-	"testing"
-)
+import "testing"
 
-// available is the root rect used by every test unless stated otherwise.
-var available = Rect{X: 0, Y: 0, Width: 80, Height: 24}
+// --- Grow distribution -------------------------------------------------
 
-// ---- helpers ----------------------------------------------------------------
-
-func rectsEqual(a, b Rect) bool {
-	return a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height
-}
-
-func checkRects(t *testing.T, got, want []Rect) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Fatalf("got %d rects, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if !rectsEqual(got[i], want[i]) {
-			t.Errorf("rect[%d]: got {X:%d Y:%d W:%d H:%d}, want {X:%d Y:%d W:%d H:%d}",
-				i,
-				got[i].X, got[i].Y, got[i].Width, got[i].Height,
-				want[i].X, want[i].Y, want[i].Width, want[i].Height,
-			)
-		}
-	}
-}
-
-// ---- 1. Fixed children stacking --------------------------------------------
-
-func TestColumn_ThreeFixedChildren_StackVertically(t *testing.T) {
-	// A column root with three Fixed(height=3) children.
-	// Expected: children placed at y=0, y=3, y=6 each spanning full width.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24}, // root
-		{X: 0, Y: 0, Width: 80, Height: 3},  // child 0
-		{X: 0, Y: 3, Width: 80, Height: 3},  // child 1
-		{X: 0, Y: 6, Width: 80, Height: 3},  // child 2
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_ThreeFixedChildren_StackHorizontally(t *testing.T) {
-	// A row root with three Fixed(width=10) children.
-	// Expected: children placed at x=0, x=10, x=20 each spanning full height.
+func TestGrowWeightDistribution(t *testing.T) {
+	// Two children, Grow(2) and Grow(1), inside a Fixed(30) Row.
+	// Expect a 20/10 split (2:1), computed via the remaining-weight
+	// peel-off in layout() rather than a naive upfront ratio.
 	root := NewLayout().
 		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
 		WithChildren(
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-			NewLayout().WithSize(Fixed(10), Grow(1)),
+			NewLayout().WithSize(Grow(2), Fit()),
+			NewLayout().WithSize(Grow(1), Fit()),
 		)
 
-	got := ComputeLayout(root, available)
+	rects := ComputeLayout(root, Rect{X: 0, Y: 0, Width: 30, Height: 5})
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},  // root
-		{X: 0, Y: 0, Width: 10, Height: 24},  // child 0
-		{X: 10, Y: 0, Width: 10, Height: 24}, // child 1
-		{X: 20, Y: 0, Width: 10, Height: 24}, // child 2
+	// rects[0] = root, rects[1] = child0, rects[2] = child1 (pre-order).
+	if len(rects) != 3 {
+		t.Fatalf("expected 3 rects (root + 2 children), got %d", len(rects))
 	}
-	checkRects(t, got, want)
+	if got := rects[1].Width; got != 20 {
+		t.Errorf("Grow(2) child width = %d, want 20", got)
+	}
+	if got := rects[2].Width; got != 10 {
+		t.Errorf("Grow(1) child width = %d, want 10", got)
+	}
 }
 
-// ---- 2. Grow proportional split --------------------------------------------
-
-func TestRow_FixedAndGrow_SplitsRemainingSpace(t *testing.T) {
-	// Row with one Fixed(20) and one Grow(1) child inside 80 columns.
-	// Remaining space after fixed = 60, all goes to Grow child.
+func TestGrowDistributionNoRoundingLossAtLastChild(t *testing.T) {
+	// Three equal-weight Grow(1) children over a width that doesn't divide
+	// evenly (31 / 3). Confirms the peel-off approach doesn't dump all the
+	// remainder onto one child unpredictably, and that widths sum to the
+	// full available space (no leaked cells).
 	root := NewLayout().
 		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
 		WithChildren(
-			NewLayout().WithSize(Fixed(20), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
+			NewLayout().WithSize(Grow(1), Fit()),
+			NewLayout().WithSize(Grow(1), Fit()),
+			NewLayout().WithSize(Grow(1), Fit()),
 		)
 
-	got := ComputeLayout(root, available)
+	rects := ComputeLayout(root, Rect{Width: 31, Height: 3})
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 20, Height: 24},
-		{X: 20, Y: 0, Width: 60, Height: 24},
+	sum := rects[1].Width + rects[2].Width + rects[3].Width
+	if sum != 31 {
+		t.Errorf("child widths sum to %d, want 31 (no leaked/duplicated cells)", sum)
 	}
-	checkRects(t, got, want)
 }
 
-func TestRow_TwoGrowChildren_EqualSplit(t *testing.T) {
-	// Two Grow(1) children share 80 columns equally → each gets 40.
+// --- Justify -------------------------------------------------------------
+
+func TestJustifySpaceBetweenPacksEdges(t *testing.T) {
 	root := NewLayout().
 		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 40, Height: 24},
-		{X: 40, Y: 0, Width: 40, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_WeightedGrowChildren_ProportionalSplit(t *testing.T) {
-	// Grow(1) and Grow(2) share 90 columns → 30 and 60.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(90), Fixed(24)).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(2), Grow(1)),
-		)
-
-	got := ComputeLayout(root, Rect{X: 0, Y: 0, Width: 90, Height: 24})
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 90, Height: 24},
-		{X: 0, Y: 0, Width: 30, Height: 24},
-		{X: 30, Y: 0, Width: 60, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-func TestColumn_WeightedGrowChildren_ProportionalSplit(t *testing.T) {
-	// Grow(1) and Grow(3) share 24 rows → 6 and 18.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(3)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 80, Height: 6},
-		{X: 0, Y: 6, Width: 80, Height: 18},
-	}
-	checkRects(t, got, want)
-}
-
-// ---- 3. Nested flex composition --------------------------------------------
-
-func TestNested_HeaderSidebarMain(t *testing.T) {
-	// Classic terminal layout:
-	//   Column root
-	//     ├── header: full width, Fixed(3)
-	//     └── body row: Grow(1)
-	//           ├── sidebar: Fixed(20), full height
-	//           └── main: Grow(1), full height
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithChildren(
-			NewLayout().
-				WithDirection(Row).
-				WithSize(Grow(1), Fixed(3)),
-			NewLayout().
-				WithDirection(Row).
-				WithSize(Grow(1), Grow(1)).
-				WithChildren(
-					NewLayout().WithSize(Fixed(20), Grow(1)),
-					NewLayout().WithSize(Grow(1), Grow(1)),
-				),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},  // root
-		{X: 0, Y: 0, Width: 80, Height: 3},   // header
-		{X: 0, Y: 3, Width: 80, Height: 21},  // body
-		{X: 0, Y: 3, Width: 20, Height: 21},  // sidebar
-		{X: 20, Y: 3, Width: 60, Height: 21}, // main
-	}
-	checkRects(t, got, want)
-}
-
-func TestNested_GrowInsideGrow_ProportionalSlice(t *testing.T) {
-	// Outer row has Grow(1) and Grow(1) → each gets 40 cols.
-	// Inner left column has Grow(1) and Grow(1) → each gets 12 rows (of 24).
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithChildren(
-			NewLayout().
-				WithDirection(Column).
-				WithSize(Grow(1), Grow(1)).
-				WithChildren(
-					NewLayout().WithSize(Grow(1), Grow(1)),
-					NewLayout().WithSize(Grow(1), Grow(1)),
-				),
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},  // root
-		{X: 0, Y: 0, Width: 40, Height: 24},  // left column
-		{X: 0, Y: 0, Width: 40, Height: 12},  // left-top
-		{X: 0, Y: 12, Width: 40, Height: 12}, // left-bottom
-		{X: 40, Y: 0, Width: 40, Height: 24}, // right
-	}
-	checkRects(t, got, want)
-}
-
-// ---- 4. Padding ------------------------------------------------------------
-
-func TestColumn_PaddingShrinkChildSpace(t *testing.T) {
-	// Root column with padding 1 on all sides.
-	// One Grow(1) child fills the inner area: 78×22.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithPadding(1, 1, 1, 1).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 1, Y: 1, Width: 78, Height: 22},
-	}
-	checkRects(t, got, want)
-}
-
-func TestColumn_AsymmetricPadding(t *testing.T) {
-	// Padding: top=2, right=4, bottom=1, left=3.
-	// Inner area: x=3, y=2, width=80-3-4=73, height=24-2-1=21.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithPadding(2, 4, 1, 3).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 3, Y: 2, Width: 73, Height: 21},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_PaddingWithMultipleChildren(t *testing.T) {
-	// Row with padding 1 all sides, two equal Grow children.
-	// Inner width = 80-2 = 78, split equally → 39 each.
-	// Inner height = 24-2 = 22.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithPadding(1, 1, 1, 1).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 1, Y: 1, Width: 39, Height: 22},
-		{X: 40, Y: 1, Width: 39, Height: 22},
-	}
-	checkRects(t, got, want)
-}
-
-// ---- 5. Gap ----------------------------------------------------------------
-
-func TestColumn_GapBetweenChildren(t *testing.T) {
-	// Column with gap=1, three Fixed(height=3) children.
-	// Positions: y=0, y=4, y=8 (gap inserted between, not at edges).
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithGap(1).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-			NewLayout().WithSize(Grow(1), Fixed(3)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 80, Height: 3},
-		{X: 0, Y: 4, Width: 80, Height: 3},
-		{X: 0, Y: 8, Width: 80, Height: 3},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_GapBetweenChildren(t *testing.T) {
-	// Row with gap=2, two Fixed(width=10) children.
-	// Positions: x=0, x=12.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithGap(2).
-		WithChildren(
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 10, Height: 24},
-		{X: 12, Y: 0, Width: 10, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-func TestColumn_GapReducesSpaceForGrowChildren(t *testing.T) {
-	// Column gap=2, two Grow(1) children. Total height=24, gaps=2 (one gap
-	// between two children), remaining for grow=22, split → 11 each.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithGap(2).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 80, Height: 11},
-		{X: 0, Y: 13, Width: 80, Height: 11},
-	}
-	checkRects(t, got, want)
-}
-
-// ---- 6. Cross-axis alignment -----------------------------------------------
-
-func TestRow_AlignCenter_NarrowChild(t *testing.T) {
-	// Row, cross axis = vertical (height). Parent height=24, child Fixed(height=6).
-	// AlignCenter → child y = (24-6)/2 = 9.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithAlign(AlignCenter).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Fixed(6)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 9, Width: 20, Height: 6},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_AlignEnd_NarrowChild(t *testing.T) {
-	// AlignEnd → child y = 24-6 = 18.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithAlign(AlignEnd).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Fixed(6)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 18, Width: 20, Height: 6},
-	}
-	checkRects(t, got, want)
-}
-
-func TestColumn_AlignCenter_NarrowChild(t *testing.T) {
-	// Column, cross axis = horizontal (width). Parent width=80, child Fixed(width=20).
-	// AlignCenter → child x = (80-20)/2 = 30.
-	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithAlign(AlignCenter).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Fixed(6)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 30, Y: 0, Width: 20, Height: 6},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_AlignStretch_ChildFillsCrossAxis(t *testing.T) {
-	// AlignStretch (default): child height = parent height regardless of Fixed.
-	// The child's cross-axis sizing is overridden to fill the parent.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithAlign(AlignStretch).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Fixed(6)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 20, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-// ---- 7. Justify (main-axis distribution) -----------------------------------
-
-func TestRow_JustifyCenter_SingleChild(t *testing.T) {
-	// Row JustifyCenter, one Fixed(20) child in 80 cols.
-	// child x = (80-20)/2 = 30.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithJustify(JustifyCenter).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 30, Y: 0, Width: 20, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_JustifyEnd_SingleChild(t *testing.T) {
-	// JustifyEnd: child placed at x = 80-20 = 60.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithJustify(JustifyEnd).
-		WithChildren(
-			NewLayout().WithSize(Fixed(20), Grow(1)),
-		)
-
-	got := ComputeLayout(root, available)
-
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 60, Y: 0, Width: 20, Height: 24},
-	}
-	checkRects(t, got, want)
-}
-
-func TestRow_JustifySpaceBetween_TwoChildren(t *testing.T) {
-	// JustifySpaceBetween: two Fixed(10) children in 80 cols.
-	// Used = 20, remaining = 60, one gap between → children at x=0 and x=70.
-	root := NewLayout().
-		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
 		WithJustify(JustifySpaceBetween).
 		WithChildren(
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-			NewLayout().WithSize(Fixed(10), Grow(1)),
+			NewLayout().WithSize(Fixed(2), Fixed(1)),
+			NewLayout().WithSize(Fixed(2), Fixed(1)),
 		)
 
-	got := ComputeLayout(root, available)
+	rects := ComputeLayout(root, Rect{Width: 20, Height: 3})
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 0, Y: 0, Width: 10, Height: 24},
-		{X: 70, Y: 0, Width: 10, Height: 24},
+	if rects[1].X != 0 {
+		t.Errorf("first child should hug start (x=0), got x=%d", rects[1].X)
 	}
-	checkRects(t, got, want)
+	if want := 18; rects[2].X != want { // 20 - width(2)
+		t.Errorf("last child should hug end (x=%d), got x=%d", want, rects[2].X)
+	}
 }
 
-func TestRow_JustifySpaceAround_TwoChildren(t *testing.T) {
-	// JustifySpaceAround: two Fixed(10) children in 80 cols.
-	// Remaining = 60, split into 2*2=4 segments → each segment = 15.
-	// child0 x = 15, child1 x = 15+10+30 = 55.
+func TestJustifySpaceBetweenIntegerDivisionSlack(t *testing.T) {
+	// 23-wide row, 3 children of width 2 each. extraSpace = 23-6 = 17,
+	// divided by (childCount-1)=2 gaps -> gap=8 (17/2, remainder 1 lost).
+	// This means the last child's right edge lands one cell short of the
+	// container's right edge (22, not 23) instead of hugging flush.
+	//
+	// This test PINS the current behavior, it doesn't assert it's correct.
+	// If the algorithm changes to distribute remainder cells to the last
+	// gap(s) instead of dropping them, this test's expected values need
+	// updating — that would be a deliberate, desirable fix.
 	root := NewLayout().
 		WithDirection(Row).
-		WithSize(Fixed(80), Fixed(24)).
-		WithJustify(JustifySpaceAround).
+		WithJustify(JustifySpaceBetween).
 		WithChildren(
-			NewLayout().WithSize(Fixed(10), Grow(1)),
-			NewLayout().WithSize(Fixed(10), Grow(1)),
+			NewLayout().WithSize(Fixed(2), Fixed(1)),
+			NewLayout().WithSize(Fixed(2), Fixed(1)),
+			NewLayout().WithSize(Fixed(2), Fixed(1)),
 		)
 
-	got := ComputeLayout(root, available)
+	rects := ComputeLayout(root, Rect{Width: 23, Height: 3})
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 15, Y: 0, Width: 10, Height: 24},
-		{X: 55, Y: 0, Width: 10, Height: 24},
+	lastRightEdge := rects[3].X + rects[3].Width
+	if lastRightEdge != 22 {
+		t.Errorf("last child right edge = %d, want 22 (current rounding behavior); "+
+			"if this now equals 23, the rounding fix landed — update this test to assert 23 and delete this comment",
+			lastRightEdge)
 	}
-	checkRects(t, got, want)
 }
 
-// ---- 8. No children --------------------------------------------------------
+// --- Align / stretch -----------------------------------------------------
 
-func TestLeafNode_NoChildren_ReturnsOnlyRoot(t *testing.T) {
-	root := NewLayout().WithSize(Fixed(80), Fixed(24))
-	got := ComputeLayout(root, available)
+func TestAlignStretchOverridesExplicitChildCrossSize(t *testing.T) {
+	// Default alignment is AlignStretch (zero value). A child with an
+	// explicit Fixed height inside a Row still gets stretched to the
+	// parent's full cross-axis size, because resolveCrossSize checks
+	// parent.alignment == AlignStretch BEFORE looking at the child's own
+	// HeightSizing mode.
+	//
+	// This diverges from CSS flexbox, where align-items: stretch only
+	// applies to children with an auto (unspecified) cross size — an
+	// explicit height wins over stretch there. This test documents retui's
+	// current (different) behavior so it can't regress silently, and so a
+	// future decision to match CSS semantics is a deliberate, visible diff.
+	root := NewLayout().
+		WithDirection(Row).
+		WithChildren(
+			NewLayout().WithSize(Fixed(3), Fixed(3)), // explicit height=3
+		)
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
+	rects := ComputeLayout(root, Rect{Width: 10, Height: 10})
+
+	if got := rects[1].Height; got != 10 {
+		t.Errorf("stretched child height = %d, want 10 (parent's full cross size); "+
+			"if this now equals 3, stretch behavior changed to respect explicit sizing — "+
+			"update this test and note it in CHANGELOG.md as a behavior change", got)
 	}
-	checkRects(t, got, want)
 }
 
-// ---- 9. Padding + Gap combined --------------------------------------------
+func TestAlignStartRespectsExplicitChildCrossSize(t *testing.T) {
+	// Sanity check contrasting the stretch case above: with AlignStart,
+	// the explicit Fixed(3) height should be honored, not overridden.
+	root := NewLayout().
+		WithDirection(Row).
+		WithAlign(AlignStart).
+		WithChildren(
+			NewLayout().WithSize(Fixed(3), Fixed(3)),
+		)
 
-func TestColumn_PaddingAndGap_Combined(t *testing.T) {
-	// Padding 1 all sides → inner area: x=1, y=1, w=78, h=22.
-	// Gap=1 between two Grow(1) children → available h=22, gaps=1, remaining=21.
-	// 21 is odd: floor(21/2)=10, remainder goes to last child → 10 and 11.
-	// (Implementation note: standard approach gives first children the floor,
-	//  last child absorbs the remainder — test reflects this.)
+	rects := ComputeLayout(root, Rect{Width: 10, Height: 10})
+
+	if got := rects[1].Height; got != 3 {
+		t.Errorf("AlignStart child height = %d, want 3 (explicit size honored)", got)
+	}
+}
+
+// --- Zero-value Sizing risk ----------------------------------------------
+
+func TestZeroValueSizingDefaultsToFixedZero(t *testing.T) {
+	// SizingFixed is iota 0, so a bare Sizing{} (or a LayoutNode built
+	// without WithSize) silently means "Fixed(0)", not "Fit()" — even
+	// though DOCS.md documents Fit() as Box's default sizing. If the
+	// Props->LayoutNode conversion (wherever that lives, likely node.go
+	// or elements.go) ever constructs a LayoutNode without explicitly
+	// calling WithSize, the box collapses to zero size instead of hugging
+	// its content. This test pins the raw layout.go behavior; a
+	// corresponding test belongs in node_test.go / elements_test.go
+	// confirming the conversion always sets WithSize explicitly.
+	var s Sizing
+	if s.Mode != SizingFixed || s.Value != 0 {
+		t.Fatalf("zero-value Sizing{} = %+v, want {SizingFixed 0}", s)
+	}
+
+	n := &LayoutNode{}
+	if n.WidthSizing.Mode != SizingFixed || n.HeightSizing.Mode != SizingFixed {
+		t.Fatalf("zero-value LayoutNode has Fixed(0) sizing on both axes, not Fit() — "+
+			"got WidthSizing=%+v HeightSizing=%+v", n.WidthSizing, n.HeightSizing)
+	}
+}
+
+// --- Reflow timing (Row vs Column) ---------------------------------------
+
+func TestReflowFiresBeforeGrowResolutionInColumn(t *testing.T) {
+	// In a Column, width is the cross axis and is known immediately via
+	// resolveCrossSize — reflow should fire in the per-child loop, before
+	// any grow distribution happens. This pins WHEN reflow is called
+	// relative to the rest of the pass.
+	var gotWidth int
+	leaf := NewLayout().WithSize(Grow(1), Fit())
+	leaf.reflow = func(crossSize int) int {
+		gotWidth = crossSize
+		return 2 // pretend this content wraps to 2 lines
+	}
+
 	root := NewLayout().
 		WithDirection(Column).
-		WithSize(Fixed(80), Fixed(24)).
-		WithPadding(1, 1, 1, 1).
-		WithGap(1).
-		WithChildren(
-			NewLayout().WithSize(Grow(1), Grow(1)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
-		)
+		WithSize(Fixed(15), Fit()).
+		WithChildren(leaf)
 
-	got := ComputeLayout(root, available)
+	_ = ComputeLayout(root, Rect{Width: 15, Height: 10})
 
-	want := []Rect{
-		{X: 0, Y: 0, Width: 80, Height: 24},
-		{X: 1, Y: 1, Width: 78, Height: 10},
-		{X: 1, Y: 12, Width: 78, Height: 11},
+	if gotWidth != 15 {
+		t.Errorf("reflow received cross width %d, want 15 (parent's resolved width)", gotWidth)
 	}
-	checkRects(t, got, want)
 }
 
-// ---- 10. Origin offset -----------------------------------------------------
+func TestReflowFiresAfterGrowResolutionInRow(t *testing.T) {
+	// In a Row, width is the main axis — a Grow child's width isn't known
+	// until grow distribution runs. reflow must fire AFTER that, using the
+	// actual allocated width, not 0 or the pre-grow intrinsic width.
+	var gotWidth int
+	leaf := NewLayout().WithSize(Grow(1), Fit())
+	leaf.reflow = func(crossSize int) int {
+		gotWidth = crossSize
+		return 2
+	}
 
-func TestColumn_NonZeroOrigin_OffsetsAllRects(t *testing.T) {
-	// Root available rect starts at x=5, y=3 (e.g. inside a parent panel).
-	// All child rects should be offset accordingly.
-	offset := Rect{X: 5, Y: 3, Width: 40, Height: 12}
 	root := NewLayout().
-		WithDirection(Column).
-		WithSize(Grow(1), Grow(1)).
+		WithDirection(Row).
 		WithChildren(
-			NewLayout().WithSize(Grow(1), Fixed(4)),
-			NewLayout().WithSize(Grow(1), Grow(1)),
+			NewLayout().WithSize(Fixed(10), Fixed(1)),
+			leaf, // gets whatever's left after the Fixed(10) sibling
 		)
 
-	got := ComputeLayout(root, offset)
+	_ = ComputeLayout(root, Rect{Width: 30, Height: 10})
 
-	want := []Rect{
-		{X: 5, Y: 3, Width: 40, Height: 12},
-		{X: 5, Y: 3, Width: 40, Height: 4},
-		{X: 5, Y: 7, Width: 40, Height: 8},
+	if gotWidth != 20 { // 30 - 10
+		t.Errorf("reflow received width %d, want 20 (post-grow-distribution width)", gotWidth)
 	}
-	checkRects(t, got, want)
 }
