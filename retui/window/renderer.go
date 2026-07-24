@@ -13,6 +13,12 @@ func NewOverlayRenderer() *OverlayRenderer {
 	return &OverlayRenderer{}
 }
 
+// Default colors used when a window hasn't set a custom title bar / body color.
+var (
+	defaultTitleBarBgColor = retui.Blue
+	defaultBodyBgColor     = retui.Color{Type: retui.ColorRGB, R: 40, G: 40, B: 40}
+)
+
 // Render returns a full-screen element with windows properly overlaid on main content.
 // The render order is: Main Content → Windows (in Z-order)
 // Windows are rendered on top of main content using absolute positioning.
@@ -58,39 +64,56 @@ func (or *OverlayRenderer) renderWindowAsOverlay(w *Window) retui.Element {
 	return retui.Overlay(w.X, w.Y, windowContent)
 }
 
-// buildTitleBarWithColor creates title bar with custom color
+// buildWindowContent builds the window frame: title bar (if any) + body.
 func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 	content := w.StaticContent
 	if w.RenderFn != nil {
 		content = w.RenderFn() // rebuilt fresh, inside a.Render()'s bracket — hooks resolve correctly here
 	}
 
+	bodyBg := w.GetBodyBgColor()
+	if bodyBg == (retui.Color{}) {
+		bodyBg = defaultBodyBgColor
+	}
+
+	body := retui.Box(
+		retui.Props{Padding: [4]int{1, 1, 1, 1}},
+		retui.NewStyle().Background(bodyBg),
+		content,
+	)
+
+	// Skip the title bar entirely when the window has no title.
+	if !w.ShowTitleBar() {
+		return retui.Box(
+			retui.Props{Direction: retui.Column, Width: retui.Fit(), Height: retui.Fit()},
+			retui.NewStyle(),
+			body,
+		)
+	}
+
 	return retui.Box(
 		retui.Props{Direction: retui.Column, Width: retui.Fit(), Height: retui.Fit()},
 		retui.NewStyle(),
 		or.buildTitleBar(w),
-		retui.Box(
-			retui.Props{Padding: [4]int{1, 1, 1, 1}},
-			retui.NewStyle().Background(retui.Color{Type: retui.ColorRGB, R: 40, G: 40, B: 40}),
-			content,
-		),
+		body,
 	)
 }
 
 // buildTitleBar creates the window title bar with title text and close indicator.
 func (or *OverlayRenderer) buildTitleBar(w *Window) retui.Element {
-	// Set default title if empty
 	title := w.Title
-	if title == "" {
-		title = "Window"
-	}
 
 	// Add [MODAL] indicator for modal windows
 	if w.Modal {
-		title = title + " [MODAL]"
+		title = title + "#"
 	}
 
-	// Title bar with blue background and white text
+	titleBarBg := w.GetTitleBarBgColor()
+	if titleBarBg == (retui.Color{}) {
+		titleBarBg = defaultTitleBarBgColor
+	}
+
+	// Title bar with configurable background and white text
 	return retui.Box(
 		retui.Props{
 			Direction: retui.Row,
@@ -98,7 +121,7 @@ func (or *OverlayRenderer) buildTitleBar(w *Window) retui.Element {
 			Height:    retui.Fixed(1),
 		},
 		retui.NewStyle().
-			Background(retui.Blue).
+			Background(titleBarBg).
 			Foreground(retui.White),
 		// Title with a space prefix for padding
 		retui.Text(" "+title, retui.NewStyle().Bold(true)),

@@ -40,6 +40,8 @@ type Element struct {
 	Markdown     MarkdownContent
 	MarkdownText string // raw markdown string for re-parsing during layout
 
+	ContentBuilder func(width, height int) Element
+
 	// OverlayX/OverlayY are only used when Type == ElementOverlay.
 	// They specify the absolute screen position (column, row) where the
 	// overlay's children are painted, ignoring flow layout entirely.

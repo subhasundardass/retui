@@ -34,6 +34,9 @@ type Window struct {
 	focused       bool          // Whether this window has focus
 	onKeyPress    func(key retui.Key) bool
 	RenderFn      func() retui.Element
+
+	TitleBarBgColor retui.Color // Background color for the title bar
+	BodyBgColor     retui.Color // Background color for the window body
 }
 
 // NewWindow creates a new window with given content.
@@ -98,6 +101,22 @@ func (w *Window) SetRenderFn(fn func() retui.Element) *Window {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.RenderFn = fn
+	return w
+}
+
+// SetTitleBarBgColor sets the background color of the title bar.
+func (w *Window) SetTitleBarBgColor(color retui.Color) *Window {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.TitleBarBgColor = color
+	return w
+}
+
+// SetBodyBgColor sets the background color of the window body.
+func (w *Window) SetBodyBgColor(color retui.Color) *Window {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.BodyBgColor = color
 	return w
 }
 
@@ -254,6 +273,28 @@ func (w *Window) GetBounds() [4]int {
 	return [4]int{w.X, w.Y, w.Width, w.Height}
 }
 
+// GetTitleBarBgColor returns the title bar's background color.
+func (w *Window) GetTitleBarBgColor() retui.Color {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.TitleBarBgColor
+}
+
+// GetBodyBgColor returns the window body's background color.
+func (w *Window) GetBodyBgColor() retui.Color {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.BodyBgColor
+}
+
+// ShowTitleBar reports whether the title bar should be rendered.
+// It's hidden automatically when no title has been set.
+func (w *Window) ShowTitleBar() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.Title != ""
+}
+
 // ========================================
 // POSITIONING HELPERS
 // ========================================
@@ -407,16 +448,18 @@ func (w *Window) Clone() *Window {
 	defer w.mu.RUnlock()
 
 	return &Window{
-		ID:            generateID(),
-		Title:         w.Title + " (Copy)",
-		Width:         w.Width,
-		Height:        w.Height,
-		X:             w.X + 5, // Offset slightly
-		Y:             w.Y + 5,
-		Modal:         w.Modal,
-		StaticContent: w.StaticContent,
-		visible:       false,
-		focused:       false,
+		ID:              generateID(),
+		Title:           w.Title + " (Copy)",
+		Width:           w.Width,
+		Height:          w.Height,
+		X:               w.X + 5, // Offset slightly
+		Y:               w.Y + 5,
+		Modal:           w.Modal,
+		StaticContent:   w.StaticContent,
+		TitleBarBgColor: w.TitleBarBgColor,
+		BodyBgColor:     w.BodyBgColor,
+		visible:         false,
+		focused:         false,
 	}
 }
 
@@ -460,4 +503,31 @@ func CloseFocusedWindow() {
 			win.Close()
 		}
 	}
+}
+
+// ========================================
+// SIMPLE ALERT
+// ========================================
+
+// Alert shows a simple modal window with content
+func AlertError(title string, content retui.Element) *Window {
+	w := NewWindow().
+		SetTitle(title).
+		SetTitleBarBgColor(retui.Red).
+		SetBodyBgColor(retui.Black).
+		SetModal(true).
+		Center().
+		SetContent(content).
+		Center().
+		Show()
+
+	w.OnKeyPress(func(key retui.Key) bool {
+		if key.Code == retui.KeyEscape || key.Code == retui.KeyEnter {
+			w.Close()
+			return true
+		}
+		return false
+	})
+
+	return w
 }

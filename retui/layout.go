@@ -20,6 +20,7 @@ const (
 	SizingFixed SizingMode = iota
 	SizingGrow
 	SizingFit
+	SizingPercent
 )
 
 type Sizing struct {
@@ -62,6 +63,16 @@ func Fixed(n int) Sizing { return Sizing{Mode: SizingFixed, Value: n} }
 func Grow(n int) Sizing { return Sizing{Mode: SizingGrow, Value: n} }
 
 func Fit() Sizing { return Sizing{Mode: SizingFit} }
+
+// Percent returns a Sizing that resolves to a percentage (0-100) of the
+// parent's resolved size along that axis. If the parent's size along that
+// axis is itself indefinite (e.g. a SizingFit parent trying to shrink-wrap
+// its children), the percentage cannot be resolved during the intrinsic
+// measure pass and is treated as 0 for that pass, mirroring how SizingGrow
+// is handled — it contributes nothing to the parent's shrink-wrap size. The
+// real value is resolved later during ComputeLayout, once the parent has a
+// concrete Rect.
+func Percent(n int) Sizing { return Sizing{Mode: SizingPercent, Value: n} }
 
 func (l *LayoutNode) WithSize(w, h Sizing) *LayoutNode {
 	l.WidthSizing = w
@@ -185,7 +196,12 @@ func measure(n *LayoutNode) (int, int) {
 			}
 		}
 
-	case SizingGrow:
+	case SizingGrow, SizingPercent:
+		// Neither can be resolved without knowing the parent's actual
+		// allocated size, which isn't available during this bottom-up
+		// pass. Both contribute 0 here; SizingGrow is resolved during
+		// layout() from remaining space, SizingPercent from the parent's
+		// concrete Rect.
 		width = 0
 	}
 
@@ -207,7 +223,7 @@ func measure(n *LayoutNode) (int, int) {
 			}
 		}
 
-	case SizingGrow:
+	case SizingGrow, SizingPercent:
 		height = 0
 
 	}
@@ -268,6 +284,18 @@ func crossAvailableSize(r Rect, dir Direction) int {
 	return r.Width
 }
 
+// clampMax returns v bounded to at most max. A negative max means "no
+// bound" (used where the available space isn't meaningfully limited, e.g.
+// a root with no parent). This is the enforcement point that stops a
+// SizingFixed/SizingFit child's intrinsic size from silently overflowing
+// past what its parent actually has to offer.
+func clampMax(v, max int) int {
+	if max >= 0 && v > max {
+		return max
+	}
+	return v
+}
+
 func resolveCrossSize(parent *LayoutNode, child *LayoutNode, into Rect) int {
 	if parent.alignment == AlignStretch {
 		return crossAvailableSize(into, parent.Direction)
@@ -276,7 +304,9 @@ func resolveCrossSize(parent *LayoutNode, child *LayoutNode, into Rect) int {
 	if parent.Direction == Row {
 		switch child.HeightSizing.Mode {
 		case SizingFixed, SizingFit:
-			return child.intrinsicHeight
+			return clampMax(child.intrinsicHeight, into.Height)
+		case SizingPercent:
+			return into.Height * child.HeightSizing.Value / 100
 		case SizingGrow:
 			return into.Height
 		}
@@ -284,7 +314,9 @@ func resolveCrossSize(parent *LayoutNode, child *LayoutNode, into Rect) int {
 
 	switch child.WidthSizing.Mode {
 	case SizingFixed, SizingFit:
-		return child.intrinsicWidth
+		return clampMax(child.intrinsicWidth, into.Width)
+	case SizingPercent:
+		return into.Width * child.WidthSizing.Value / 100
 	case SizingGrow:
 		return into.Width
 	}
@@ -391,7 +423,14 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		if n.Direction == Row {
 			switch child.WidthSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Width = child.intrinsicWidth
+				// Clamp: a Fixed/Fit child's intrinsic width must not
+				// exceed what the parent actually has left to give on the
+				// main axis, or it silently overflows the parent's bounds
+				// (e.g. a wide table rendered inside a narrower Box).
+				childRect.Width = clampMax(child.intrinsicWidth, max(innerMainSize-usedByFixedAndFit, 0))
+				usedByFixedAndFit += childRect.Width
+			case SizingPercent:
+				childRect.Width = innerMainSize * child.WidthSizing.Value / 100
 				usedByFixedAndFit += childRect.Width
 			case SizingGrow:
 				totalGrowWeight += child.WidthSizing.Value
@@ -400,7 +439,10 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		} else {
 			switch child.HeightSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Height = child.intrinsicHeight
+				childRect.Height = clampMax(child.intrinsicHeight, max(innerMainSize-usedByFixedAndFit, 0))
+				usedByFixedAndFit += childRect.Height
+			case SizingPercent:
+				childRect.Height = innerMainSize * child.HeightSizing.Value / 100
 				usedByFixedAndFit += childRect.Height
 			case SizingGrow:
 				totalGrowWeight += child.HeightSizing.Value

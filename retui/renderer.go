@@ -89,11 +89,27 @@ func NewRenderer(screen *Screen) *ComponentRenderer {
 	return &ComponentRenderer{screen: screen}
 }
 
+// pendingOverlay holds an overlay node whose painting is deferred until
+// after the entire main tree has been painted, so overlays always end up
+// on the topmost visual layer regardless of where they sit in the tree
+// (e.g. a dropdown belonging to row i must not get painted over by rows
+// i+1, i+2, ... that happen to paint afterward in tree order).
+type pendingOverlay struct {
+	element     Element
+	parentStyle Style
+}
+
 // Render runs a full layout + paint pass for the given element tree.
 // Cell-level diffing in SetCell ensures that only genuinely changed
 // cells are marked dirty, so the subsequent Flush call emits the
 // minimum possible ANSI output even though paint visits every cell.
 func (r *ComponentRenderer) Render(next Element) {
+	// Resolve any deferred (size-aware) content BEFORE building the real
+	// layout tree. This gives components like Table their true resolved
+	// width/height — from whatever parent Box actually constrains them
+	// to — instead of guessing from the terminal size.
+	next = resolveDeferred(next, r.screen.Width(), r.screen.Height())
+
 	layoutRoot := buildLayoutTree(next)
 
 	contentW, contentH := IntrinsicSize(layoutRoot)
@@ -126,12 +142,86 @@ func (r *ComponentRenderer) Render(next Element) {
 	}
 
 	r.screen.Clear()
-	paint(next, rects, 0, r.screen, Style{})
+
+	var pending []pendingOverlay
+	paint(next, rects, 0, r.screen, Style{}, &pending)
+
+	// Second pass: paint every collected overlay LAST, on top of
+	// everything else, so nothing painted during the main tree traversal
+	// (e.g. sibling rows below this one) can stamp over it afterward.
+	for _, po := range pending {
+		paintOverlayChildren(po.element, r.screen, po.parentStyle)
+	}
 
 	// If content overflows the terminal viewport, write rows inline so
 	// the terminal scrolls older content into scrollback. Must run after
 	// paint because it reads from the cell grid.
 	r.screen.EnsureRoom(finalH)
+}
+
+// hasDeferred reports whether element or any descendant carries a
+// ContentBuilder that still needs resolving.
+func hasDeferred(element Element) bool {
+	if element.ContentBuilder != nil {
+		return true
+	}
+	for _, c := range element.Children {
+		if hasDeferred(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveDeferred walks element, and for every node with a ContentBuilder,
+// calls it with that node's resolved width/height and splices the result
+// in, recursing in case the built content itself defers further.
+//
+// It works by running a throwaway ("placeholder") layout pass first: a
+// ContentBuilder node behaves as a childless leaf during this pass (its
+// real children don't exist yet), so its LayoutProps sizing (Fixed/Grow/
+// Fit/Percent) still determines its placeholder rect exactly the way any
+// other leaf's would — e.g. Grow(1) still correctly receives its share of
+// the parent's real available space. That rect's width/height is then
+// handed to ContentBuilder, and the returned Element replaces the node.
+//
+// This mirrors the existing reflow mechanism in layout.go (which defers a
+// height number until width is known) one level up: here a node's entire
+// content, not just a number, is deferred until its size is known.
+func resolveDeferred(element Element, availW, availH int) Element {
+	if !hasDeferred(element) {
+		return element
+	}
+
+	placeholderRoot := buildLayoutTree(element)
+	rects := ComputeLayout(placeholderRoot, Rect{X: 0, Y: 0, Width: availW, Height: availH})
+
+	idx := 0
+	var resolve func(e Element) Element
+	resolve = func(e Element) Element {
+		rect := rects[idx]
+		idx++
+
+		if e.ContentBuilder != nil {
+			built := e.ContentBuilder(rect.Width, rect.Height)
+			// The built content may itself contain further deferred
+			// nodes (unusual, but not disallowed) — resolve those too,
+			// scoped to the space this node was just given.
+			return resolveDeferred(built, rect.Width, rect.Height)
+		}
+
+		if len(e.Children) == 0 {
+			return e
+		}
+		newChildren := make([]Element, len(e.Children))
+		for i, c := range e.Children {
+			newChildren[i] = resolve(c)
+		}
+		e.Children = newChildren
+		return e
+	}
+
+	return resolve(element)
 }
 
 func buildLayoutTree(element Element) *LayoutNode {
@@ -238,7 +328,12 @@ func buildLayoutTree(element Element) *LayoutNode {
 // traversal order ComputeLayout uses to produce rects. parentStyle is
 // inherited from ancestors; each element merges its own Style onto it
 // before painting and before passing it to children.
-func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle Style) int {
+//
+// Overlay nodes are NOT painted here — they're appended to pending and
+// painted in a final pass after the whole tree finishes (see Render),
+// so an overlay is never stamped over by a sibling/cousin that happens
+// to paint afterward in tree order.
+func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle Style, pending *[]pendingOverlay) int {
 	rect := rects[idx]
 	idx++
 
@@ -246,10 +341,8 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 
 	switch element.Type {
 	case ElementOverlay:
-		// Ignore the flow-assigned rect entirely. Paint children at the
-		// absolute screen position stored on the element, so the overlay
-		// floats on top of whatever flow-positioned content is underneath.
-		paintOverlayChildren(element, screen, effective)
+		// Defer: collect for the end-of-frame pass instead of painting now.
+		*pending = append(*pending, pendingOverlay{element: element, parentStyle: effective})
 
 	case ElementBox:
 		for x := rect.X; x < rect.X+rect.Width; x++ {
@@ -313,11 +406,11 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		}
 	}
 
-	// Overlay children are painted via paintOverlayChildren above and do
-	// not participate in the rects traversal — skip their idx slots.
+	// Overlay children are collected via pending above and do not
+	// participate in the rects traversal here — skip their idx slots.
 	if element.Type != ElementOverlay {
 		for _, child := range element.Children {
-			idx = paint(child, rects, idx, screen, effective)
+			idx = paint(child, rects, idx, screen, effective, pending)
 		}
 	} else {
 		// Still need to advance idx past the slots ComputeLayout allocated
@@ -343,7 +436,9 @@ func skipRects(element Element, idx int) int {
 // (element.OverlayX, element.OverlayY), bypassing flow layout completely.
 // Each child is built into its own independent layout tree so ComputeLayout
 // gives it a fresh rect starting at (OverlayX, OverlayY).
-
+//
+// Called only from Render's deferred final pass now, so anything it paints
+// is guaranteed to land on top of the already-completed main tree.
 func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 	if len(element.Children) == 0 {
 		return
@@ -381,7 +476,16 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 		Height: maxH,
 	}
 	rects := ComputeLayout(layoutRoot, available)
-	paint(wrapper, rects, 0, screen, parentStyle)
+
+	// This wrapper's own subtree is painted with a fresh pending slice:
+	// if the overlay's content itself contains a nested Overlay (unusual,
+	// but not disallowed), it gets its own deferred pass scoped to this
+	// call rather than leaking into the outer frame's pending list.
+	var nestedPending []pendingOverlay
+	paint(wrapper, rects, 0, screen, parentStyle, &nestedPending)
+	for _, po := range nestedPending {
+		paintOverlayChildren(po.element, screen, po.parentStyle)
+	}
 }
 
 func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
@@ -397,12 +501,6 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 
 	x0, y0 := rect.X, rect.Y
 	x1, y1 := rect.X+rect.Width-1, rect.Y+rect.Height-1
-
-	// if b.Top {
-	// 	for x := x0 + 1; x < x1; x++ {
-	// 		screen.SetCell(x, y0, c.Top, bs)
-	// 	}
-	// }
 
 	//--Added title if avaiable
 	if b.Top {
