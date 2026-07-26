@@ -1,12 +1,11 @@
 package components
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/subhasundardass/retui/retui"
 )
-
-type TextAreaOption func(*TextAreaConfig)
 
 type TextAreaConfig struct {
 	ID          string
@@ -17,6 +16,8 @@ type TextAreaConfig struct {
 	Style       retui.Style
 	Prefix      string
 	Suffix      string
+	MinLength   int
+	MaxLength   int
 	OnChange    func(id string, value string)
 	OnKeyPress  func(id string, key retui.Key) bool
 	OnFocus     func(id string)
@@ -24,110 +25,140 @@ type TextAreaConfig struct {
 	OnSubmit    func(id string, value string)
 }
 
-func TextAreaWithID(id string) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.ID = id
+type TextAreaField struct {
+	config  TextAreaConfig
+	focused bool
+}
+
+// ─── Builder Methods ──────────────────────────────────────────────────────
+
+func TextArea() *TextAreaField {
+	return &TextAreaField{
+		config: TextAreaConfig{
+			ID:          "",
+			Value:       "",
+			Placeholder: "",
+			Width:       40,
+			Height:      5,
+			Style:       retui.NewStyle(),
+			Prefix:      "",
+			Suffix:      "",
+			MinLength:   0,
+			MaxLength:   0,
+			OnChange:    nil,
+			OnKeyPress:  nil,
+			OnFocus:     nil,
+			OnBlur:      nil,
+			OnSubmit:    nil,
+		},
+		focused: false,
 	}
 }
 
-func TextAreaWithValue(value string) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Value = value
-	}
+func (t *TextAreaField) ID(v string) *TextAreaField {
+	t.config.ID = v
+	return t
 }
 
-func TextAreaWithPlaceholder(text string) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Placeholder = text
-	}
+func (t *TextAreaField) Value(v string) *TextAreaField {
+	t.config.Value = v
+	return t
 }
 
-func TextAreaWithWidth(width int) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Width = width
-	}
+func (t *TextAreaField) Placeholder(v string) *TextAreaField {
+	t.config.Placeholder = v
+	return t
 }
 
-func TextAreaWithHeight(height int) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Height = height
-	}
+func (t *TextAreaField) Width(w int) *TextAreaField {
+	t.config.Width = w
+	return t
 }
 
-func TextAreaWithStyle(style retui.Style) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Style = style
-	}
+func (t *TextAreaField) Height(h int) *TextAreaField {
+	t.config.Height = h
+	return t
 }
 
-func TextAreaWithPrefix(prefix string) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Prefix = prefix
-	}
+func (t *TextAreaField) Prefix(v string) *TextAreaField {
+	t.config.Prefix = v
+	return t
 }
 
-func TextAreaWithSuffix(suffix string) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.Suffix = suffix
-	}
+func (t *TextAreaField) Suffix(v string) *TextAreaField {
+	t.config.Suffix = v
+	return t
 }
 
-func TextAreaWithOnChange(fn func(id string, value string)) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.OnChange = fn
-	}
+func (t *TextAreaField) Style(s retui.Style) *TextAreaField {
+	t.config.Style = s
+	return t
 }
 
-func TextAreaWithOnKeyPress(fn func(id string, key retui.Key) bool) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.OnKeyPress = fn
-	}
+func (t *TextAreaField) MinLength(v int) *TextAreaField {
+	t.config.MinLength = v
+	return t
 }
 
-func TextAreaWithOnFocus(fn func(id string)) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.OnFocus = fn
-	}
+func (t *TextAreaField) MaxLength(v int) *TextAreaField {
+	t.config.MaxLength = v
+	return t
 }
 
-func TextAreaWithOnBlur(fn func(id string)) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.OnBlur = fn
-	}
+func (t *TextAreaField) Focused(v bool) *TextAreaField {
+	t.focused = v
+	return t
 }
 
-func TextAreaWithOnSubmit(fn func(id string, value string)) TextAreaOption {
-	return func(c *TextAreaConfig) {
-		c.OnSubmit = fn
-	}
+func (t *TextAreaField) OnChange(fn func(string, string)) *TextAreaField {
+	t.config.OnChange = fn
+	return t
 }
 
-// ─── TextArea ──────────────────────────────────────────────────────────────
+func (t *TextAreaField) OnKeyPress(fn func(string, retui.Key) bool) *TextAreaField {
+	t.config.OnKeyPress = fn
+	return t
+}
 
-func TextArea(focused bool, opts ...TextAreaOption) retui.Element {
-	config := &TextAreaConfig{
-		ID:          "",
-		Value:       "",
-		Placeholder: "",
-		Width:       40,
-		Height:      5,
-		Style:       retui.NewStyle(),
-		Prefix:      "",
-		Suffix:      "",
-		OnChange:    nil,
-		OnKeyPress:  nil,
-		OnFocus:     nil,
-		OnBlur:      nil,
-		OnSubmit:    nil,
+func (t *TextAreaField) OnFocus(fn func(string)) *TextAreaField {
+	t.config.OnFocus = fn
+	return t
+}
+
+func (t *TextAreaField) OnBlur(fn func(string)) *TextAreaField {
+	t.config.OnBlur = fn
+	return t
+}
+
+func (t *TextAreaField) OnSubmit(fn func(string, string)) *TextAreaField {
+	t.config.OnSubmit = fn
+	return t
+}
+
+// ─── Render Method ──────────────────────────────────────────────────────
+
+func (t *TextAreaField) Render() retui.Element {
+	return renderTextArea(t.focused, &t.config)
+}
+
+// ─── Core Rendering Function ────────────────────────────────────────────
+
+func renderTextArea(focused bool, config *TextAreaConfig) retui.Element {
+	runes := []rune(config.Value)
+
+	// Single absolute cursor position, same as TextInput — no separate
+	// "currentLine" state, so cursor and line navigation can never drift
+	// out of sync with each other.
+	pos, setPos := retui.UseState(len(runes))
+
+	if pos > len(runes) {
+		pos = len(runes)
+		setPos(pos)
 	}
-
-	for _, opt := range opts {
-		opt(config)
+	if pos < 0 {
+		pos = 0
+		setPos(pos)
 	}
-
-	//State for cursor position
-	pos, setPos := retui.UseState(len(config.Value))
-	currentLine, setCurrentLine := retui.UseState(0) //FIXED: renamed to currentLine
 
 	if focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
@@ -151,42 +182,66 @@ func TextArea(focused bool, opts ...TextAreaOption) retui.Element {
 			if pos > 0 {
 				setPos(pos - 1)
 			}
+
 		case retui.KeyRight:
-			if pos < len(config.Value) {
+			if pos < len(runes) {
 				setPos(pos + 1)
 			}
+
 		case retui.KeyUp:
-			if currentLine > 0 {
-				setCurrentLine(currentLine - 1)
+			if newPos, ok := movePosVertically(runes, pos, -1); ok {
+				setPos(newPos)
 			}
+
 		case retui.KeyDown:
-			if currentLine < config.Height-1 {
-				setCurrentLine(currentLine + 1)
+			if newPos, ok := movePosVertically(runes, pos, 1); ok {
+				setPos(newPos)
 			}
+
+		case retui.KeySpace:
+			if config.MaxLength == 0 || len(runes) < config.MaxLength {
+				newRunes := append(append(append([]rune{}, runes[:pos]...), ' '), runes[pos:]...)
+				newValue := string(newRunes)
+				config.Value = newValue
+				if config.OnChange != nil && config.ID != "" {
+					config.OnChange(config.ID, newValue)
+				}
+				setPos(pos + 1)
+			}
+
 		case retui.KeyBackspace:
-			if pos > 0 && len(config.Value) > 0 {
-				newValue := config.Value[:pos-1] + config.Value[pos:]
+			if pos > 0 && len(runes) > 0 {
+				newRunes := append(append([]rune{}, runes[:pos-1]...), runes[pos:]...)
+				newValue := string(newRunes)
 				config.Value = newValue
 				if config.OnChange != nil && config.ID != "" {
 					config.OnChange(config.ID, newValue)
 				}
 				setPos(pos - 1)
 			}
+
 		case retui.KeyHome:
-			setPos(0)
+			setPos(lineStart(runes, pos))
+
 		case retui.KeyEnd:
-			setPos(len(config.Value))
+			setPos(lineEnd(runes, pos))
+
 		case retui.KeyDelete:
-			if pos < len(config.Value) {
-				newValue := config.Value[:pos] + config.Value[pos+1:]
+			if pos < len(runes) {
+				newRunes := append(append([]rune{}, runes[:pos]...), runes[pos+1:]...)
+				newValue := string(newRunes)
 				config.Value = newValue
 				if config.OnChange != nil && config.ID != "" {
 					config.OnChange(config.ID, newValue)
 				}
 			}
+
 		case retui.KeyEnter:
-			//Insert newline on Enter
-			newValue := config.Value[:pos] + "\n" + config.Value[pos:]
+			if config.MinLength > 0 && len(runes) < config.MinLength {
+				return renderTextAreaError(config, "Minimum length is "+strconv.Itoa(config.MinLength)+" characters")
+			}
+			newRunes := append(append(append([]rune{}, runes[:pos]...), '\n'), runes[pos:]...)
+			newValue := string(newRunes)
 			config.Value = newValue
 			if config.OnChange != nil && config.ID != "" {
 				config.OnChange(config.ID, newValue)
@@ -195,65 +250,100 @@ func TextArea(focused bool, opts ...TextAreaOption) retui.Element {
 			if config.OnSubmit != nil && config.ID != "" {
 				config.OnSubmit(config.ID, newValue)
 			}
+
 		default:
-			if key.Rune != 0 && key.Rune >= 32 {
-				newValue := config.Value[:pos] + string(key.Rune) + config.Value[pos:]
-				config.Value = newValue
-				if config.OnChange != nil && config.ID != "" {
-					config.OnChange(config.ID, newValue)
+			if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 {
+				if config.MaxLength == 0 || len(runes) < config.MaxLength {
+					newRunes := append(append(append([]rune{}, runes[:pos]...), key.Rune), runes[pos:]...)
+					newValue := string(newRunes)
+					config.Value = newValue
+					if config.OnChange != nil && config.ID != "" {
+						config.OnChange(config.ID, newValue)
+					}
+					setPos(pos + 1)
 				}
-				setPos(pos + 1)
 			}
 		}
 	}
 
 render:
+	runes = []rune(config.Value)
+	if pos > len(runes) {
+		pos = len(runes)
+	}
+
+	isValid := true
+	if config.MinLength > 0 && len(runes) < config.MinLength {
+		isValid = false
+	}
+
 	display := config.Value
-	if display == "" && config.Placeholder != "" {
+	if display == "" && config.Placeholder != "" && !focused {
 		display = config.Placeholder
 	}
 
-	//Wrap text to width
-	lines := wrapTextArea(display, config.Width)
-
-	//Pad to height
-	for len(lines) < config.Height {
-		lines = append(lines, "")
-	}
-
+	// Same style rules as TextInput: solid bg block, not a border.
 	textStyle := config.Style
 	if focused {
-		textStyle = textStyle.Foreground(retui.White)
+		textStyle = textStyle.
+			Foreground(retui.BrightWhite).
+			Background(retui.Blue).
+			Bold(true)
 	} else {
-		textStyle = textStyle.Foreground(retui.BrightBlack)
-	}
-
-	borderColor := retui.BrightBlack
-	if focused {
-		borderColor = retui.Cyan
+		textStyle = textStyle.
+			Foreground(retui.BrightBlack).
+			Background(retui.Hex("#0c0c0c")).
+			Bold(true)
 	}
 
 	bracketStyle := retui.NewStyle()
 	if focused {
+		borderColor := retui.Cyan
+		if !isValid {
+			borderColor = retui.Red
+		}
 		bracketStyle = bracketStyle.Foreground(borderColor).Bold(true)
 	} else {
 		bracketStyle = bracketStyle.Foreground(retui.BrightBlack)
 	}
 
-	//Build content lines with cursor
-	contentLines := []retui.Element{}
+	// Wrap to width, then place cursor by converting absolute pos -> (line, col)
+	lines := wrapTextArea(display, config.Width)
+	for len(lines) < config.Height {
+		lines = append(lines, "")
+	}
+
+	cursorLine, cursorCol := -1, -1
+	if focused {
+		cursorLine, cursorCol = posToLineCol(display, config.Width, pos)
+	}
+
+	textStyleForDisplay := textStyle
+	if !isValid && !focused {
+		textStyleForDisplay = textStyleForDisplay.Foreground(retui.Red)
+	}
+
+	contentLines := make([]retui.Element, 0, len(lines))
 	for lineIdx, lineContent := range lines {
-		displayLine := lineContent
-		//FIXED: Use currentLine instead of line
-		if focused && lineIdx == currentLine {
-			runes := []rune(displayLine)
-			if pos < len(runes) {
-				displayLine = string(runes[:pos]) + "█" + string(runes[pos:])
+		lineDisplay := lineContent
+
+		if focused && lineIdx == cursorLine {
+			lr := []rune(lineDisplay)
+			if cursorCol < len(lr) {
+				lineDisplay = string(lr[:cursorCol]) + "█" + string(lr[cursorCol:])
 			} else {
-				displayLine = string(runes) + "█"
+				lineDisplay = string(lr) + "█"
 			}
 		}
-		contentLines = append(contentLines, retui.Text(displayLine, textStyle))
+
+		// Pad each line to width, same as TextInput pads its single line,
+		// so the background color fills the whole field consistently.
+		lineLen := len([]rune(lineDisplay))
+		if lineLen < config.Width {
+			lineDisplay += strings.Repeat(" ", config.Width-lineLen)
+		}
+
+		contentLines = append(contentLines, retui.Text(lineDisplay, textStyleForDisplay))
 	}
 
 	elements := []retui.Element{}
@@ -262,22 +352,13 @@ render:
 		elements = append(elements, retui.Text(config.Prefix, bracketStyle))
 	}
 
-	//Text area content
 	elements = append(elements, retui.Box(
 		retui.Props{
 			Direction: retui.Column,
-			Width:     retui.Fixed(config.Width + 2),
+			Width:     retui.Fixed(config.Width),
 			Height:    retui.Fixed(config.Height),
 		},
-		retui.NewStyle().
-			Border(retui.Border{
-				Top:    true,
-				Right:  true,
-				Bottom: true,
-				Left:   true,
-				Chars:  retui.BorderRounded,
-				Color:  borderColor,
-			}),
+		retui.NewStyle(),
 		contentLines...,
 	))
 
@@ -294,13 +375,93 @@ render:
 	)
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+func renderTextAreaError(config *TextAreaConfig, msg string) retui.Element {
+	return retui.Box(
+		retui.Props{Direction: retui.Row},
+		retui.NewStyle(),
+		retui.Text(msg, retui.NewStyle().Foreground(retui.Red)),
+	)
+}
+
+// lineStart returns the absolute index of the start of the line containing pos.
+func lineStart(runes []rune, pos int) int {
+	for i := pos - 1; i >= 0; i-- {
+		if runes[i] == '\n' {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// lineEnd returns the absolute index of the end of the line containing pos.
+func lineEnd(runes []rune, pos int) int {
+	for i := pos; i < len(runes); i++ {
+		if runes[i] == '\n' {
+			return i
+		}
+	}
+	return len(runes)
+}
+
+// movePosVertically moves pos up (dir=-1) or down (dir=1) one raw line
+// (split on '\n' only — matches lineStart/lineEnd, not visual wrapping).
+func movePosVertically(runes []rune, pos int, dir int) (int, bool) {
+	start := lineStart(runes, pos)
+	col := pos - start
+
+	if dir < 0 {
+		if start == 0 {
+			return 0, false
+		}
+		prevEnd := start - 1 // the '\n' before this line
+		prevStart := lineStart(runes, prevEnd)
+		prevLen := prevEnd - prevStart
+		if col > prevLen {
+			col = prevLen
+		}
+		return prevStart + col, true
+	}
+
+	end := lineEnd(runes, pos)
+	if end >= len(runes) {
+		return pos, false
+	}
+	nextStart := end + 1
+	nextEnd := lineEnd(runes, nextStart)
+	nextLen := nextEnd - nextStart
+	if col > nextLen {
+		col = nextLen
+	}
+	return nextStart + col, true
+}
+
+// posToLineCol converts an absolute rune index in raw text into a
+// (wrapped-line, column) position within the wrapped display, so the
+// cursor lands in the right spot after word-wrapping.
+func posToLineCol(text string, width int, pos int) (int, int) {
+	wrapped := wrapTextArea(text[:min(pos, len(text))], width)
+	if len(wrapped) == 0 {
+		return 0, 0
+	}
+	lastLine := wrapped[len(wrapped)-1]
+	return len(wrapped) - 1, len([]rune(lastLine))
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // wrapTextArea wraps text to max width
 func wrapTextArea(text string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		return []string{text}
 	}
 
-	// Split by newlines first
 	paragraphs := strings.Split(text, "\n")
 	var allLines []string
 
