@@ -4,15 +4,33 @@ import (
 	"strings"
 )
 
+// ============================================================================
+// Global Renderer
+// ============================================================================
+
+// Renderer is the default global renderer instance.
+// Initialize via NewRenderer(screen) and reuse for all Render calls.
+// Note: Renderer is not thread-safe; synchronize access via your app's event loop.
 var Renderer = NewRenderer(StdOutScreen)
 
-// rawLines returns the text split on '\n' only, with no word wrapping.
+// ============================================================================
+// Text Wrapping
+// ============================================================================
+
+// rawLines splits text on '\n' only, with no word wrapping or processing.
+// Returns a slice of line strings; empty input produces []string{""}.
 func rawLines(text string) []string {
 	return strings.Split(text, "\n")
 }
 
-// wrappedLines splits text on '\n' then word-wraps each segment to fit
-// within maxWidth columns.
+// wrappedLines splits text on '\n', then word-wraps each segment to fit
+// within maxWidth columns, handling multi-rune characters correctly.
+//
+// Word wrapping uses space boundaries preferentially; words exceeding maxWidth
+// are hard-broken at maxWidth boundary.
+//
+// If maxWidth <= 0, returns text as-is (single line with no wrapping).
+// Empty input produces []string{""}.
 func wrappedLines(text string, maxWidth int) []string {
 	var out []string
 	for _, seg := range rawLines(text) {
@@ -21,9 +39,20 @@ func wrappedLines(text string, maxWidth int) []string {
 	return out
 }
 
-// wrapText breaks a single line (no '\n') into one or more lines so
-// each line's total cell width is <= maxWidth, preferring word
-// boundaries. Words longer than maxWidth are hard-broken as a fallback.
+// wrapText breaks a single unwrapped line into one or more lines, each with
+// cell width <= maxWidth. Prefers word boundaries (space-separated); words
+// longer than maxWidth are hard-broken at the boundary as a fallback.
+//
+// Cell width accounts for multi-rune characters via RuneWidth (e.g. wide
+// characters count as 2 columns).
+//
+// maxWidth <= 0 is treated as "no wrap"; the entire text is returned as a
+// single line. Empty input produces []string{""}.
+//
+// Example:
+//
+//	wrapText("hello world test", 10) → []string{"hello", "world test"}
+//	wrapText("verylongword", 5) → []string{"verylo", "ngwor", "d"}
 func wrapText(text string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		return []string{text}
@@ -39,87 +68,138 @@ func wrapText(text string, maxWidth int) []string {
 	lineWidth := 0
 
 	for _, word := range words {
-		wordWidth := len([]rune(word))
+		wordWidth := countRuneWidth(word)
 
 		if lineWidth == 0 {
+			// Line is empty: add word, hard-break if necessary.
 			for wordWidth > maxWidth {
 				runes := []rune(word)
-				line.WriteString(string(runes[:maxWidth]))
+				addRunesToBuilder(&line, runes, 0, maxWidth)
 				lines = append(lines, line.String())
 				line.Reset()
 				word = string(runes[maxWidth:])
-				wordWidth = len([]rune(word))
+				wordWidth = countRuneWidth(word)
 			}
 			line.WriteString(word)
 			lineWidth = wordWidth
 		} else if lineWidth+1+wordWidth <= maxWidth {
+			// Word fits with space separator.
 			line.WriteByte(' ')
 			line.WriteString(word)
 			lineWidth += 1 + wordWidth
 		} else {
+			// Word doesn't fit: flush line and start fresh.
 			lines = append(lines, line.String())
 			line.Reset()
 			lineWidth = 0
 
+			// Hard-break oversized word if necessary.
 			for wordWidth > maxWidth {
 				runes := []rune(word)
-				line.WriteString(string(runes[:maxWidth]))
+				addRunesToBuilder(&line, runes, 0, maxWidth)
 				lines = append(lines, line.String())
 				line.Reset()
 				word = string(runes[maxWidth:])
-				wordWidth = len([]rune(word))
+				wordWidth = countRuneWidth(word)
 			}
 			line.WriteString(word)
 			lineWidth = wordWidth
 		}
 	}
 
+	// Append any remaining partial line.
 	lines = append(lines, line.String())
 	return lines
 }
 
-// ComponentRenderer owns the Screen and drives layout + paint on every
-// frame. It contains no dirty channel — scheduling is handled entirely
-// by App.Run's select loop and the dirty-cell tracking in Screen.
+// countRuneWidth returns the cell width (display columns) of a string,
+// accounting for multi-rune characters via RuneWidth.
+func countRuneWidth(text string) int {
+	width := 0
+	for _, r := range text {
+		width += RuneWidth(r)
+	}
+	return width
+}
+
+// addRunesToBuilder appends up to maxWidth columns of runes from [start..),
+// accounting for multi-rune character widths.
+func addRunesToBuilder(b *strings.Builder, runes []rune, start, maxWidth int) {
+	width := 0
+	for i := start; i < len(runes) && width < maxWidth; i++ {
+		b.WriteRune(runes[i])
+		width += RuneWidth(runes[i])
+	}
+}
+
+// ============================================================================
+// Renderer
+// ============================================================================
+
+// ComponentRenderer owns a Screen and drives layout + paint on every render frame.
+// Render() computes layout and paints the element tree to the screen atomically.
+// Cell-level diffing in Screen ensures only changed cells emit ANSI output.
+//
+// Renderer is not thread-safe; coordinate all Render calls via your app's
+// event loop or use explicit synchronization.
 type ComponentRenderer struct {
 	screen *Screen
 }
 
+// NewRenderer creates a new renderer backed by the given screen.
+// screen must be non-nil; panics if screen is nil.
+//
+// Multiple renderers can exist; typically your app uses a single global Renderer.
 func NewRenderer(screen *Screen) *ComponentRenderer {
+	if screen == nil {
+		panic("NewRenderer: screen is nil")
+	}
 	return &ComponentRenderer{screen: screen}
 }
 
-// pendingOverlay holds an overlay node whose painting is deferred until
-// after the entire main tree has been painted, so overlays always end up
-// on the topmost visual layer regardless of where they sit in the tree
-// (e.g. a dropdown belonging to row i must not get painted over by rows
-// i+1, i+2, ... that happen to paint afterward in tree order).
+// pendingOverlay represents an overlay element deferred until after the main tree
+// is painted, ensuring overlays always render on the topmost visual layer.
 type pendingOverlay struct {
 	element     Element
 	parentStyle Style
 }
 
-// Render runs a full layout + paint pass for the given element tree.
-// Cell-level diffing in SetCell ensures that only genuinely changed
-// cells are marked dirty, so the subsequent Flush call emits the
-// minimum possible ANSI output even though paint visits every cell.
+// Render computes layout and paints element tree to the screen in one atomic pass.
+//
+// Steps:
+// 1. Resolve deferred content (ContentBuilder nodes) with their measured sizes.
+// 2. Build layout tree from element tree.
+// 3. Measure intrinsic size and adjust screen height if needed.
+// 4. Compute layout (position and size each node).
+// 5. Paint main tree, deferring overlays.
+// 6. Paint deferred overlays on top.
+// 7. Ensure scrollback room if content overflows terminal viewport.
+//
+// Cell-level diffing (SetCell) marks only genuinely changed cells dirty,
+// so Flush emits minimal ANSI output even though paint visits every cell.
+//
+// If content's wrapped text (reflow) causes height to expand after initial
+// layout, Render re-measures and re-layouts automatically to propagate the
+// new height to containers.
 func (r *ComponentRenderer) Render(next Element) {
-	// Resolve any deferred (size-aware) content BEFORE building the real
-	// layout tree. This gives components like Table their true resolved
-	// width/height — from whatever parent Box actually constrains them
-	// to — instead of guessing from the terminal size.
+	// Step 1: Resolve deferred (size-aware) content BEFORE building real layout tree.
+	// ContentBuilder nodes need their resolved width/height from parent constraints,
+	// not terminal size guesses. This pass gives them the true size they'll actually get.
 	next = resolveDeferred(next, r.screen.Width(), r.screen.Height())
 
+	// Step 2: Build layout tree from element tree.
 	layoutRoot := buildLayoutTree(next)
 
+	// Step 3: Measure intrinsic size; expand screen if needed for content height.
 	contentW, contentH := IntrinsicSize(layoutRoot)
 	screenH := r.screen.Height()
 	if contentH > screenH {
 		r.screen.Resize(r.screen.Width(), contentH)
 	}
 
-	// Respect the root's sizing intent. A Fit root occupies only its
-	// intrinsic size; Grow/Fixed roots adopt the full screen rect.
+	// Respect root's sizing intent:
+	// - Fit root: occupy only intrinsic size
+	// - Grow/Fixed root: adopt full screen/allocated space
 	availW := r.screen.Width()
 	availH := r.screen.Height()
 	if layoutRoot.WidthSizing.Mode == SizingFit && contentW < availW {
@@ -129,12 +209,13 @@ func (r *ComponentRenderer) Render(next Element) {
 		availH = contentH
 	}
 
+	// Step 4a: Compute layout with current constraints.
 	available := Rect{X: 0, Y: 0, Width: availW, Height: availH}
 	rects := ComputeLayout(layoutRoot, available)
 
-	// After ComputeLayout, intrinsicHeight reflects any reflow passes
-	// (e.g. wrapped text expanding the tree). Use that for scrollback
-	// bookkeeping instead of the pre-reflow value from earlier.
+	// Step 4b: If reflow callbacks fired (e.g. wrapped text), tree height may have changed.
+	// Re-measure and re-layout to propagate new height to ancestors (containers around
+	// wrapped text must grow to fit).
 	finalH := layoutRoot.intrinsicHeight
 	if finalH > r.screen.Height() {
 		r.screen.Resize(r.screen.Width(), finalH)
@@ -143,24 +224,28 @@ func (r *ComponentRenderer) Render(next Element) {
 
 	r.screen.Clear()
 
+	// Steps 5-6: Paint main tree and collect overlays for deferred final pass.
 	var pending []pendingOverlay
 	paint(next, rects, 0, r.screen, Style{}, &pending)
 
-	// Second pass: paint every collected overlay LAST, on top of
-	// everything else, so nothing painted during the main tree traversal
-	// (e.g. sibling rows below this one) can stamp over it afterward.
+	// Second pass: paint overlays LAST, on top of everything.
+	// This ensures overlays never get stamped over by siblings/cousins that
+	// paint later in the main tree traversal.
 	for _, po := range pending {
 		paintOverlayChildren(po.element, r.screen, po.parentStyle)
 	}
 
-	// If content overflows the terminal viewport, write rows inline so
-	// the terminal scrolls older content into scrollback. Must run after
-	// paint because it reads from the cell grid.
+	// Step 7: Ensure scrollback room if content overflows terminal viewport.
+	// Must run after paint (reads from cell grid).
 	r.screen.EnsureRoom(finalH)
 }
 
-// hasDeferred reports whether element or any descendant carries a
-// ContentBuilder that still needs resolving.
+// ============================================================================
+// Deferred Content Resolution
+// ============================================================================
+
+// hasDeferred reports whether element or any descendant has a ContentBuilder
+// that needs resolving.
 func hasDeferred(element Element) bool {
 	if element.ContentBuilder != nil {
 		return true
@@ -173,26 +258,32 @@ func hasDeferred(element Element) bool {
 	return false
 }
 
-// resolveDeferred walks element, and for every node with a ContentBuilder,
-// calls it with that node's resolved width/height and splices the result
-// in, recursing in case the built content itself defers further.
+// resolveDeferred walks element tree and resolves all ContentBuilder callbacks
+// with their actual allocated sizes.
 //
-// It works by running a throwaway ("placeholder") layout pass first: a
-// ContentBuilder node behaves as a childless leaf during this pass (its
-// real children don't exist yet), so its LayoutProps sizing (Fixed/Grow/
-// Fit/Percent) still determines its placeholder rect exactly the way any
-// other leaf's would — e.g. Grow(1) still correctly receives its share of
-// the parent's real available space. That rect's width/height is then
-// handed to ContentBuilder, and the returned Element replaces the node.
+// How it works:
+//  1. Run a throwaway ("placeholder") layout pass where ContentBuilder nodes
+//     are treated as childless leaves.
+//  2. A ContentBuilder node's LayoutProps sizing (Fixed/Grow/Fit/Percent)
+//     determines its placeholder rect exactly as any other leaf would.
+//     For example, Grow(1) still correctly receives its share of the parent's
+//     remaining space in the placeholder pass.
+//  3. That rect's width/height is passed to ContentBuilder, returning the
+//     real Element, which replaces the node.
+//  4. Recursively resolve any deferred content in the built result.
 //
-// This mirrors the existing reflow mechanism in layout.go (which defers a
-// height number until width is known) one level up: here a node's entire
-// content, not just a number, is deferred until its size is known.
+// This mirrors the reflow mechanism in layout.go (height deferred until width
+// known) one level higher: here a node's entire content is deferred until its
+// size is known, not just a dimension number.
+//
+// availW, availH are the screen/parent dimensions available for the initial
+// placeholder pass.
 func resolveDeferred(element Element, availW, availH int) Element {
 	if !hasDeferred(element) {
 		return element
 	}
 
+	// Build placeholder tree (ContentBuilder nodes are leaves).
 	placeholderRoot := buildLayoutTree(element)
 	rects := ComputeLayout(placeholderRoot, Rect{X: 0, Y: 0, Width: availW, Height: availH})
 
@@ -203,16 +294,19 @@ func resolveDeferred(element Element, availW, availH int) Element {
 		idx++
 
 		if e.ContentBuilder != nil {
+			// Call builder with resolved size.
 			built := e.ContentBuilder(rect.Width, rect.Height)
-			// The built content may itself contain further deferred
-			// nodes (unusual, but not disallowed) — resolve those too,
-			// scoped to the space this node was just given.
+
+			// Built content may itself contain deferred nodes (unusual but allowed).
+			// Resolve recursively, scoped to the space this node was given.
 			return resolveDeferred(built, rect.Width, rect.Height)
 		}
 
 		if len(e.Children) == 0 {
 			return e
 		}
+
+		// Resolve children.
 		newChildren := make([]Element, len(e.Children))
 		for i, c := range e.Children {
 			newChildren[i] = resolve(c)
@@ -224,10 +318,33 @@ func resolveDeferred(element Element, availW, availH int) Element {
 	return resolve(element)
 }
 
+// ============================================================================
+// Layout Tree Construction
+// ============================================================================
+
+// buildLayoutTree converts an Element tree to a LayoutNode tree, extracting
+// sizing, padding, border, and gap information.
+//
+// Element text content (ElementText, ElementMultilineText, ElementMarkdown)
+// is converted to fixed or reflow-based sizing:
+//   - Plain text: fixed width (summed rune widths) and height 1.
+//   - Wrapped multiline: Grow(1) width, Fit() height, with reflow callback
+//     to compute height from allocated width.
+//   - Unwrapped multiline: fixed width (max line width) and height (line count).
+//   - Markdown: Grow(1) width, Fit() height, reflow callback renders markdown
+//     to lines given allocated width.
+//
+// Overlay elements are zero-sized in the flow (position is absolute), but
+// children are still added to the tree so the rects slice stays in sync with
+// the paint traversal order.
+//
+// Borders are merged into padding (border.Top etc. add 1 to the corresponding
+// padding, since border draws inside the padding region).
 func buildLayoutTree(element Element) *LayoutNode {
 	p := element.Layout
 	b := element.Style.border
 
+	// Merge border into padding (border draws inside).
 	padTop, padRight, padBottom, padLeft := p.PaddingTop, p.PaddingRight, p.PaddingBottom, p.PaddingLeft
 	if b.Top {
 		padTop++
@@ -257,24 +374,20 @@ func buildLayoutTree(element Element) *LayoutNode {
 
 	switch element.Type {
 	case ElementOverlay:
-		// An overlay occupies zero space in the flow layout — its position
-		// is absolute (OverlayX/OverlayY on the Element), so it must not
-		// push siblings or contribute to the parent's measured size.
-		// Children are still added so the rects slice stays in sync with
-		// the paint traversal order.
+		// Overlay: zero-size in flow (absolute positioning), but children are still
+		// added so rects slice stays in sync with paint.
 		l.WidthSizing = Fixed(0)
 		l.HeightSizing = Fixed(0)
 
 	case ElementText:
-		w := 0
-		for _, ch := range element.Text {
-			w += RuneWidth(ch)
-		}
+		// Plain text: fixed width and height 1.
+		w := countRuneWidth(element.Text)
 		l.WidthSizing = Fixed(w)
 		l.HeightSizing = Fixed(1)
 
 	case ElementMultilineText:
 		if element.Wrap {
+			// Wrapped: Grow width (fill available), Fit height with reflow.
 			l.WidthSizing = Grow(1)
 			l.HeightSizing = Fit()
 			text := element.Text
@@ -285,13 +398,11 @@ func buildLayoutTree(element Element) *LayoutNode {
 				return len(wrappedLines(text, width))
 			}
 		} else {
+			// Unwrapped: fixed width (max line width) and height (line count).
 			lines := rawLines(element.Text)
 			widest := 0
 			for _, line := range lines {
-				w := 0
-				for _, ch := range line {
-					w += RuneWidth(ch)
-				}
+				w := countRuneWidth(line)
 				if w > widest {
 					widest = w
 				}
@@ -301,6 +412,7 @@ func buildLayoutTree(element Element) *LayoutNode {
 		}
 
 	case ElementMarkdown:
+		// Markdown: Grow width (fill available), Fit height with reflow.
 		l.WidthSizing = Grow(1)
 		l.HeightSizing = Fit()
 		markdownText := element.MarkdownText
@@ -312,39 +424,48 @@ func buildLayoutTree(element Element) *LayoutNode {
 			lines := renderMarkdownLines(markdownText, width, baseStyle)
 			return len(lines)
 		}
+		// Preserve intrinsic height from prior render (used by reflow propagation).
 		l.intrinsicHeight = 1
 		if len(element.Markdown.Lines) > 0 {
 			l.intrinsicHeight = len(element.Markdown.Lines)
 		}
 	}
 
+	// Recursively build children.
 	for _, child := range element.Children {
 		l.Children = append(l.Children, buildLayoutTree(child))
 	}
 	return l
 }
 
-// paint walks the element tree in depth-first pre-order, matching the
-// traversal order ComputeLayout uses to produce rects. parentStyle is
-// inherited from ancestors; each element merges its own Style onto it
-// before painting and before passing it to children.
+// ============================================================================
+// Painting
+// ============================================================================
+
+// paint walks element tree in depth-first pre-order (matching ComputeLayout's
+// rect order) and paints cells to screen. parentStyle is inherited from
+// ancestors; each element merges its own Style onto it.
 //
-// Overlay nodes are NOT painted here — they're appended to pending and
-// painted in a final pass after the whole tree finishes (see Render),
-// so an overlay is never stamped over by a sibling/cousin that happens
-// to paint afterward in tree order.
+// Overlay nodes are NOT painted here — they're appended to pending and painted
+// in a final deferred pass (see Render), ensuring overlays never get stamped
+// over by siblings/cousins painted later in tree order.
+//
+// Returns the index after the last rect consumed, so siblings can continue
+// from the correct position in the rects slice.
 func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle Style, pending *[]pendingOverlay) int {
 	rect := rects[idx]
 	idx++
 
+	// Merge styles: element's style layered on parent's.
 	effective := mergeStyles(parentStyle, element.Style)
 
 	switch element.Type {
 	case ElementOverlay:
-		// Defer: collect for the end-of-frame pass instead of painting now.
+		// Defer: collect for end-of-frame pass (painted last, on top).
 		*pending = append(*pending, pendingOverlay{element: element, parentStyle: effective})
 
 	case ElementBox:
+		// Fill rect with background.
 		for x := rect.X; x < rect.X+rect.Width; x++ {
 			for y := rect.Y; y < rect.Y+rect.Height; y++ {
 				screen.SetCell(x, y, ' ', effective)
@@ -353,6 +474,7 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		paintBorder(screen, rect, effective, element.Style.border)
 
 	case ElementText:
+		// Paint single line of text.
 		x := rect.X
 		for _, ch := range element.Text {
 			if x >= rect.X+rect.Width {
@@ -363,6 +485,7 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		}
 
 	case ElementMultilineText:
+		// Paint multiple lines (wrapped or raw).
 		var lines []string
 		if element.Wrap {
 			lines = wrappedLines(element.Text, rect.Width)
@@ -385,6 +508,7 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		}
 
 	case ElementMarkdown:
+		// Paint markdown-rendered lines (with inline styling).
 		lines := element.Markdown.Lines
 		if element.MarkdownText != "" && rect.Width > 0 {
 			lines = renderMarkdownLines(element.MarkdownText, rect.Width, element.Style)
@@ -406,44 +530,52 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		}
 	}
 
-	// Overlay children are collected via pending above and do not
-	// participate in the rects traversal here — skip their idx slots.
+	// Overlay children are deferred (handled in pending above) and do not
+	// participate in the rects traversal here. Skip their idx slots.
 	if element.Type != ElementOverlay {
 		for _, child := range element.Children {
 			idx = paint(child, rects, idx, screen, effective, pending)
 		}
 	} else {
 		// Still need to advance idx past the slots ComputeLayout allocated
-		// for the overlay's children so subsequent siblings read the right rect.
+		// for the overlay's children so subsequent siblings read the correct rect.
 		idx = skipRects(element, idx)
 	}
 	return idx
 }
 
-// skipRects advances idx past all rects that ComputeLayout allocated for
-// element and its entire subtree, without painting anything. Used when
-// paint has already handled a subtree by other means (e.g. overlay absolute
-// painting) but must keep the rects index in sync for subsequent siblings.
+// skipRects advances idx past all rects allocated by ComputeLayout for element
+// and its entire subtree, without painting anything.
+//
+// Used when a subtree is handled by other means (e.g. overlay painting) but
+// the rects index must stay in sync for subsequent siblings.
 func skipRects(element Element, idx int) int {
 	for _, child := range element.Children {
-		idx++ // skip child's own rect
+		idx++ // skip child's rect
 		idx = skipRects(child, idx)
 	}
 	return idx
 }
 
-// paintOverlayChildren renders element's children at absolute coordinates
-// (element.OverlayX, element.OverlayY), bypassing flow layout completely.
-// Each child is built into its own independent layout tree so ComputeLayout
-// gives it a fresh rect starting at (OverlayX, OverlayY).
+// paintOverlayChildren paints element's children at absolute coordinates
+// (element.OverlayX, element.OverlayY), bypassing flow layout.
 //
-// Called only from Render's deferred final pass now, so anything it paints
-// is guaranteed to land on top of the already-completed main tree.
+// Each child is measured and laid out in its own independent tree (using a
+// wrapper Element) so ComputeLayout gives it a fresh rect starting at
+// (OverlayX, OverlayY). This allows overlays to be positioned absolutely
+// independent of the main flow.
+//
+// Called only from Render's deferred final pass, guaranteeing overlay paint
+// lands on top of the already-completed main tree.
+//
+// Nested overlays are allowed (unusual); each gets its own deferred pass
+// scoped to the call rather than leaking into the outer frame's pending list.
 func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 	if len(element.Children) == 0 {
 		return
 	}
 
+	// Wrap children in a container for independent layout.
 	wrapper := Element{
 		Type:     ElementBox,
 		Style:    element.Style,
@@ -456,12 +588,20 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 
 	layoutRoot := buildLayoutTree(wrapper)
 
-	// Measure intrinsic size BEFORE computing layout, and clamp the
-	// available rect to it so Fit() can't expand into leftover screen space.
+	// Measure intrinsic size; clamp available rect to it so Fit() doesn't
+	// expand into leftover screen space.
 	contentW, contentH := IntrinsicSize(layoutRoot)
 
 	maxW := screen.Width() - element.OverlayX
 	maxH := screen.Height() - element.OverlayY
+
+	// Clamp to screen boundaries; allow negative coordinates (off-screen overlay).
+	if maxW < 0 {
+		maxW = 0
+	}
+	if maxH < 0 {
+		maxH = 0
+	}
 	if contentW < maxW {
 		maxW = contentW
 	}
@@ -477,10 +617,7 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 	}
 	rects := ComputeLayout(layoutRoot, available)
 
-	// This wrapper's own subtree is painted with a fresh pending slice:
-	// if the overlay's content itself contains a nested Overlay (unusual,
-	// but not disallowed), it gets its own deferred pass scoped to this
-	// call rather than leaking into the outer frame's pending list.
+	// Nested overlays get their own pending slice scoped to this call.
 	var nestedPending []pendingOverlay
 	paint(wrapper, rects, 0, screen, parentStyle, &nestedPending)
 	for _, po := range nestedPending {
@@ -488,6 +625,14 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 	}
 }
 
+// paintBorder renders a box border on the screen with optional title text
+// in the top edge.
+//
+// Borders are drawn at the edges of the rect using Unicode box-drawing glyphs.
+// Title (if present and non-empty) is centered in the top edge with space
+// padding on both sides; if title is too long, it's truncated.
+//
+// Does nothing if border has no edges enabled or rect has zero dimensions.
 func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 	if !b.Any() || rect.Width == 0 || rect.Height == 0 {
 		return
@@ -502,51 +647,130 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 	x0, y0 := rect.X, rect.Y
 	x1, y1 := rect.X+rect.Width-1, rect.Y+rect.Height-1
 
-	//--Added title if avaiable
+	// Top edge: draw line, then overlay title if present.
 	if b.Top {
-		inside := x1 - x0 - 1
-
-		// Draw full top border first
 		for x := x0 + 1; x < x1; x++ {
 			screen.SetCell(x, y0, c.Top, bs)
 		}
 
-		if b.Title != "" && inside > 2 {
-			title := " " + b.Title + " "
-			runes := []rune(title)
+		title := base.title
+		if title.Text != "" {
+			runes := []rune(" " + title.Text + " ")
 
+			inside := rect.Width - 2
 			if len(runes) > inside {
 				runes = runes[:inside]
 			}
 
-			start := x0 + 2 // leave one border glyph before title
+			ts := bs
+
+			if !title.Foreground.IsZero() {
+				ts.foreground = title.Foreground
+			}
+			if !title.Background.IsZero() {
+				ts.background = title.Background
+			}
+			if title.Bold {
+				ts.bold = true
+			}
+			if title.Italic {
+				ts.italic = true
+			}
+			if title.Underline {
+				ts.underline = true
+			}
+
+			start := x0 + 2
+
+			switch title.Align {
+			case AlignCenter:
+				start = x0 + 1 + (inside-len(runes))/2
+
+			case AlignEnd:
+				start = x1 - len(runes)
+
+			case AlignStart:
+				fallthrough
+			default:
+				start = x0 + 2
+			}
+
+			// Prevent overwriting border corners
+			if start < x0+1 {
+				start = x0 + 1
+			}
+
+			if start+len(runes) > x1 {
+				start = x1 - len(runes)
+			}
 
 			for i, r := range runes {
 				x := start + i
-				if x >= x1 {
-					break
+				if x <= x0 || x >= x1 {
+					continue
 				}
-
-				screen.SetCell(x, y0, r, bs)
+				screen.SetCell(x, y0, r, ts)
 			}
 		}
+
+		// Bottom border
+		if b.Bottom && y1 > y0 {
+			for x := x0 + 1; x < x1; x++ {
+				screen.SetCell(x, y1, c.Bottom, bs)
+			}
+		}
+
+		// Left border
+		if b.Left {
+			for y := y0 + 1; y < y1; y++ {
+				screen.SetCell(x0, y, c.Left, bs)
+			}
+		}
+
+		// Right border
+		if b.Right && x1 > x0 {
+			for y := y0 + 1; y < y1; y++ {
+				screen.SetCell(x1, y, c.Right, bs)
+			}
+		}
+
+		// Corners
+		if g := cornerGlyph(c.TopLeft, c.Top, c.Left, b.Top, b.Left); g != 0 {
+			screen.SetCell(x0, y0, g, bs)
+		}
+		if g := cornerGlyph(c.TopRight, c.Top, c.Right, b.Top, b.Right); g != 0 {
+			screen.SetCell(x1, y0, g, bs)
+		}
+		if g := cornerGlyph(c.BottomLeft, c.Bottom, c.Left, b.Bottom, b.Left); g != 0 {
+			screen.SetCell(x0, y1, g, bs)
+		}
+		if g := cornerGlyph(c.BottomRight, c.Bottom, c.Right, b.Bottom, b.Right); g != 0 {
+			screen.SetCell(x1, y1, g, bs)
+		}
 	}
+
+	// Bottom edge
 	if b.Bottom && y1 != y0 {
 		for x := x0 + 1; x < x1; x++ {
 			screen.SetCell(x, y1, c.Bottom, bs)
 		}
 	}
+
+	// Left edge
 	if b.Left {
 		for y := y0 + 1; y < y1; y++ {
 			screen.SetCell(x0, y, c.Left, bs)
 		}
 	}
+
+	// Right edge
 	if b.Right && x1 != x0 {
 		for y := y0 + 1; y < y1; y++ {
 			screen.SetCell(x1, y, c.Right, bs)
 		}
 	}
 
+	// Corners
 	if g := cornerGlyph(c.TopLeft, c.Top, c.Left, b.Top, b.Left); g != 0 {
 		screen.SetCell(x0, y0, g, bs)
 	}
@@ -561,8 +785,12 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 	}
 }
 
-// cornerGlyph picks the rune for a single corner of a box border.
-// Returns 0 to skip drawing the corner cell entirely.
+// cornerGlyph selects the correct rune for a box-drawing corner given the
+// available edge glyphs and which edges are enabled.
+//
+// Returns 0 to skip drawing this corner entirely (e.g. if no edges enabled).
+//
+// Priority: cornerChar (both edges) > single-edge character > skip.
 func cornerGlyph(cornerChar, hChar, vChar rune, hasH, hasV bool) rune {
 	switch {
 	case hasH && hasV:
