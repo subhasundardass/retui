@@ -7,22 +7,24 @@ import (
 )
 
 type panelBuilder struct {
-	width      retui.Sizing
-	children   []retui.Element
-	header     retui.Element
-	hasHeader  bool
-	headerGap  int
-	contentGap int
-	style      *retui.Style
-	fixedWidth int
-	isFixed    bool
+	width         retui.Sizing
+	height        retui.Sizing
+	children      []retui.Element
+	header        retui.Element
+	hasHeader     bool
+	headerGap     int
+	contentGap    int
+	style         *retui.Style
+	fixedWidth    int
+	isFixed       bool
+	fixedHeight   int
+	isFixedHeight bool
 }
 
 // Panel starts an empty panel builder. Width defaults to Grow(1).
 func Panel() *panelBuilder {
 	return &panelBuilder{
 		width:      retui.Grow(1),
-		headerGap:  0,
 		contentGap: 0,
 		style:      nil,
 		fixedWidth: 0,
@@ -44,6 +46,31 @@ func (p *panelBuilder) FixedWidth(width int) *panelBuilder {
 	return p
 }
 
+// Height sets the layout sizing (retui.Fixed(n) or retui.Grow(n)) for the
+// panel's total height. Most callers want FixedHeight instead — a plain
+// Height doesn't tell buildPanel how to split the total between chrome
+// (borders/header) and content, so a Grow/Fixed here without FixedHeight
+// won't pad the interior; use it only if you're managing that split
+// yourself.
+func (p *panelBuilder) Height(h retui.Sizing) *panelBuilder {
+	p.height = h
+	return p
+}
+
+// FixedHeight sets a fixed *total* height for the panel. Top border,
+// header row, header gap, the divider under the header, content, and the
+// bottom border all have to fit inside this many lines. If content is
+// shorter than what's available, buildPanel pads the remainder with a
+// bordered (but empty) filler row, so the side walls and bottom border
+// land in the right place instead of stopping wherever the content
+// happened to end.
+func (p *panelBuilder) FixedHeight(height int) *panelBuilder {
+	p.height = retui.Fixed(height)
+	p.fixedHeight = height
+	p.isFixedHeight = true
+	return p
+}
+
 // Style sets a custom style for the panel borders.
 func (p *panelBuilder) Style(style retui.Style) *panelBuilder {
 	p.style = &style
@@ -54,12 +81,6 @@ func (p *panelBuilder) Style(style retui.Style) *panelBuilder {
 func (p *panelBuilder) Header(el retui.Element) *panelBuilder {
 	p.header = el
 	p.hasHeader = true
-	return p
-}
-
-// HeaderGap sets the gap between header and content (default: 0).
-func (p *panelBuilder) HeaderGap(gap int) *panelBuilder {
-	p.headerGap = gap
 	return p
 }
 
@@ -190,34 +211,37 @@ func (p *panelBuilder) getBorderStyle() retui.Style {
 	if p.style != nil {
 		return *p.style
 	}
-	return retui.NewStyle().Foreground(retui.Hex("#535353"))
+	return retui.NewStyle().Foreground(retui.Gray(1))
 }
 
 // buildPanel assembles the complete panel
 func (p *panelBuilder) buildPanel(borderStyle retui.Style) retui.Element {
-	// For fixed width, calculate inner width once
 	var innerWidth int
 	if p.isFixed && p.fixedWidth > 0 {
-		innerWidth = p.fixedWidth - 2 // Subtract left and right borders
+		innerWidth = p.fixedWidth - 2
 		if innerWidth < 0 {
 			innerWidth = 0
 		}
 	}
 
-	// Build content rows with side borders
+	headerRow, headerRowHeight := p.buildHeaderRow(borderStyle, innerWidth)
+
+	// Build content rows with side borders, tracking how many lines of
+	// actual content we've accounted for so a FixedHeight panel knows how
+	// much filler (if any) is needed to reach the requested total height.
 	contentRows := []retui.Element{}
+	actualContentHeight := 0
+
 	for i, child := range p.children {
 
 		if i > 0 && p.contentGap > 0 {
 			contentRows = append(contentRows, retui.Box(
-				retui.Props{
-					Height: retui.Fixed(p.contentGap),
-				},
+				retui.Props{Height: retui.Fixed(p.contentGap)},
 				retui.NewStyle(),
 			))
+			actualContentHeight += p.contentGap
 		}
 
-		// For fixed width, use Fixed(innerWidth) instead of Grow(1)
 		var contentWidth retui.Sizing
 		if p.isFixed {
 			contentWidth = retui.Fixed(innerWidth)
@@ -225,77 +249,115 @@ func (p *panelBuilder) buildPanel(borderStyle retui.Style) retui.Element {
 			contentWidth = retui.Grow(1)
 		}
 
+		rowHeight := measureHeight(child)
+		actualContentHeight += rowHeight
+
 		contentRows = append(contentRows, retui.Box(
 			retui.Props{
 				Direction: retui.Row,
 				Width:     p.width,
 			},
 			retui.NewStyle(),
-			retui.Text("│", borderStyle),
+			buildVerticalBorder("│", borderStyle, rowHeight),
 			retui.Box(
-				retui.Props{
-					Width: contentWidth,
-				},
+				retui.Props{Width: contentWidth},
 				retui.NewStyle(),
 				child,
 			),
-			retui.Text("│", borderStyle),
+			buildVerticalBorder("│", borderStyle, rowHeight),
 		))
 	}
 
-	// Build header row
-	headerRow := p.buildHeaderRow(borderStyle, innerWidth)
-
-	// Build the complete panel
 	elements := []retui.Element{
 		p.buildBorderLine("┌", "─", "┐", borderStyle, innerWidth),
 		headerRow,
 	}
 
+	chromeHeight := 1 /* top border */ + headerRowHeight + 1 /* ├─┤ */ + 1 /* bottom border */
+
 	if p.headerGap > 0 {
 		elements = append(elements, retui.Box(
-			retui.Props{
-				Height: retui.Fixed(p.headerGap),
-			},
+			retui.Props{Height: retui.Fixed(p.headerGap)},
 			retui.NewStyle(),
 		))
+		chromeHeight += p.headerGap
 	}
 
 	elements = append(elements, p.buildBorderLine("├", "─", "┤", borderStyle, innerWidth))
 
+	// FixedHeight: work out how much vertical space is left for content
+	// after all the chrome, and pad with a bordered-but-empty filler row
+	// so the walls reach the bottom border even when content is shorter
+	// than requested.
+	if p.isFixedHeight {
+		remainingForContent := p.fixedHeight - chromeHeight
+		if remainingForContent < 0 {
+			remainingForContent = 0
+		}
+
+		if leftover := remainingForContent - actualContentHeight; leftover > 0 {
+			var fillerWidth retui.Sizing
+			if p.isFixed {
+				fillerWidth = retui.Fixed(innerWidth)
+			} else {
+				fillerWidth = retui.Grow(1)
+			}
+
+			contentRows = append(contentRows, retui.Box(
+				retui.Props{
+					Direction: retui.Row,
+					Width:     p.width,
+				},
+				retui.NewStyle(),
+				buildVerticalBorder("│", borderStyle, leftover),
+				retui.Box(
+					retui.Props{Width: fillerWidth, Height: retui.Fixed(leftover)},
+					retui.NewStyle(),
+				),
+				buildVerticalBorder("│", borderStyle, leftover),
+			))
+			actualContentHeight += leftover
+		}
+		// If content already exceeds remainingForContent, it overflows —
+		// this file has no clipping, so the panel renders taller than
+		// FixedHeight rather than cutting content off.
+	}
+
 	if len(contentRows) > 0 {
-		elements = append(elements, retui.Box(
-			retui.Props{
-				Direction: retui.Column,
-				Width:     p.width,
-				Gap:       0,
-			},
-			retui.NewStyle(),
-			contentRows...,
-		))
+		wrapperProps := retui.Props{
+			Direction: retui.Column,
+			Width:     p.width,
+			Gap:       0,
+		}
+		if p.isFixedHeight {
+			wrapperProps.Height = retui.Fixed(actualContentHeight)
+		}
+		elements = append(elements, retui.Box(wrapperProps, retui.NewStyle(), contentRows...))
 	}
 
 	elements = append(elements, p.buildBorderLine("└", "─", "┘", borderStyle, innerWidth))
 
-	return retui.Box(
-		retui.Props{
-			Direction: retui.Column,
-			Width:     p.width,
-			Gap:       0,
-		},
-		retui.NewStyle(),
-		elements...,
-	)
+	outerProps := retui.Props{
+		Direction: retui.Column,
+		Width:     p.width,
+		Gap:       0,
+	}
+	if p.isFixedHeight {
+		outerProps.Height = p.height
+	}
+
+	return retui.Box(outerProps, retui.NewStyle(), elements...)
 }
 
-// buildHeaderRow creates the header section
-func (p *panelBuilder) buildHeaderRow(borderStyle retui.Style, innerWidth int) retui.Element {
+// buildHeaderRow creates the header section. It also returns the header's
+// measured height, which buildPanel needs to budget space when FixedHeight
+// is set.
+func (p *panelBuilder) buildHeaderRow(borderStyle retui.Style, innerWidth int) (retui.Element, int) {
 	var headerInner retui.Element
 
 	if p.hasHeader {
 		headerInner = p.header
 	} else {
-		// For fixed width, use Fixed sizing for the empty header
 		var contentWidth retui.Sizing
 		if p.isFixed {
 			contentWidth = retui.Fixed(innerWidth)
@@ -311,13 +373,15 @@ func (p *panelBuilder) buildHeaderRow(borderStyle retui.Style, innerWidth int) r
 		)
 	}
 
-	return retui.Box(
+	rowHeight := measureHeight(headerInner)
+
+	row := retui.Box(
 		retui.Props{
 			Direction: retui.Row,
 			Width:     p.width,
 		},
 		retui.NewStyle(),
-		retui.Text("│", borderStyle),
+		buildVerticalBorder("│", borderStyle, rowHeight),
 		retui.Box(
 			retui.Props{
 				Width: retui.Grow(1),
@@ -325,8 +389,10 @@ func (p *panelBuilder) buildHeaderRow(borderStyle retui.Style, innerWidth int) r
 			retui.NewStyle(),
 			headerInner,
 		),
-		retui.Text("│", borderStyle),
+		buildVerticalBorder("│", borderStyle, rowHeight),
 	)
+
+	return row, rowHeight
 }
 
 // buildBorderLine creates a border line
@@ -380,6 +446,14 @@ func measureHeight(el retui.Element) int {
 }
 
 func measureBoxHeight(el retui.Element) int {
+	// An explicit fixed height is a hard constraint the real layout engine
+	// already enforces on this box — it is NOT derived from children.
+	// Ignoring it (as the code below does) is what let a Height: Fixed(10)
+	// box measure as 1 when its child content was shorter than 10 lines.
+	// if el.Layout.Height.Type == retui.SizingFixed {
+	// 	return el.Layout.Height.Value
+	// }
+
 	pad := el.Layout.PaddingTop + el.Layout.PaddingBottom
 
 	if len(el.Children) == 0 {
@@ -401,4 +475,24 @@ func measureBoxHeight(el retui.Element) int {
 		total += measureHeight(c)
 	}
 	return total + pad
+}
+
+// buildVerticalBorder draws a side-border character repeated down `height`
+// lines. A single Text node's rect can be stretched to any height by
+// AlignStretch, but paint() only draws text on its own first line — so a
+// multi-line row needs `height` separate Text nodes stacked in a Column,
+// one per row, not one Text node asked to be tall.
+func buildVerticalBorder(ch string, style retui.Style, height int) retui.Element {
+	if height <= 1 {
+		return retui.Text(ch, style)
+	}
+	lines := make([]retui.Element, height)
+	for i := range lines {
+		lines[i] = retui.Text(ch, style)
+	}
+	return retui.Box(
+		retui.Props{Direction: retui.Column, Gap: 0},
+		retui.NewStyle(),
+		lines...,
+	)
 }
