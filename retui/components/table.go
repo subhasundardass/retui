@@ -444,7 +444,7 @@ func (t *TableField) calculateColumnWidths(colCount int) []int {
 	// and should not be relied on in ordinary usage.
 	availableWidth := cfg.width
 	if availableWidth <= 0 {
-		availableWidth = retui.StdOutScreen.Width()
+		availableWidth = retui.StdOutScreen().Width()
 	}
 
 	if cfg.showBorders {

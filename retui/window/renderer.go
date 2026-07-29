@@ -77,7 +77,7 @@ func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 	}
 
 	body := retui.Box(
-		retui.Props{Padding: [4]int{1, 1, 1, 1}},
+		retui.Props{},
 		retui.NewStyle().Background(bodyBg),
 		content,
 	)

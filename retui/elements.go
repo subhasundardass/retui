@@ -1,14 +1,5 @@
 package retui
 
-const (
-	ElementBox ElementType = iota
-	ElementText
-	ElementMultilineText
-	ElementMarkdown
-	ElementComponent
-	ElementOverlay // floating absolute-position container — see Overlay()
-)
-
 // Box creates a container element that arranges its children using a
 // flexbox-style layout.
 //

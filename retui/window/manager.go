@@ -55,17 +55,31 @@ func init() {
 
 		// Added: default Escape behavior for modals
 		if key.Code == retui.KeyEscape && globalManager.IsAnyModalOpen() {
+
+			retui.Debugf("Overlay Open: %v", retui.IsAnyOverlayOpen())
+
+			// An overlay (SelectDropdown, popup, etc.) is open.
+			// Don't let the modal handle Escape.
+			if retui.IsAnyOverlayOpen() {
+				return false
+			}
+
 			activeID := globalManager.GetActiveModal()
 			if activeID != "" {
-				win := globalManager.GetWindow(activeID)
-				if win != nil {
+				if win := globalManager.GetWindow(activeID); win != nil {
+
+					// Let the modal handle Escape first.
 					if win.HandleKey(key) {
 						return true
 					}
+
+					// Modal didn't handle it, so close it.
 					win.Close()
+					return true
 				}
 			}
-			return true // ← always hit, regardless of what happened above
+
+			return true
 		}
 
 		id := globalManager.GetFocused()
