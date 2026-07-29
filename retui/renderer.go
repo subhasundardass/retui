@@ -11,7 +11,8 @@ import (
 // Renderer is the default global renderer instance.
 // Initialize via NewRenderer(screen) and reuse for all Render calls.
 // Note: Renderer is not thread-safe; synchronize access via your app's event loop.
-var Renderer = NewRenderer(StdOutScreen)
+var screen = StdOutScreen()
+var Renderer = NewRenderer(screen)
 
 // ============================================================================
 // Text Wrapping
@@ -649,103 +650,56 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 
 	// Top edge: draw line, then overlay title if present.
 	if b.Top {
+		// Draw full top line with horizontal character.
 		for x := x0 + 1; x < x1; x++ {
 			screen.SetCell(x, y0, c.Top, bs)
 		}
 
-		title := base.title
-		if title.Text != "" {
-			runes := []rune(" " + title.Text + " ")
+		// Overlay title text if provided.
+		if b.Title != nil && b.Title.Text != "" {
+			inside := x1 - x0 - 1
+			if inside > 2 {
+				title := " " + b.Title.Text + " "
+				runes := []rune(title)
 
-			inside := rect.Width - 2
-			if len(runes) > inside {
-				runes = runes[:inside]
-			}
-
-			ts := bs
-
-			if !title.Foreground.IsZero() {
-				ts.foreground = title.Foreground
-			}
-			if !title.Background.IsZero() {
-				ts.background = title.Background
-			}
-			if title.Bold {
-				ts.bold = true
-			}
-			if title.Italic {
-				ts.italic = true
-			}
-			if title.Underline {
-				ts.underline = true
-			}
-
-			start := x0 + 2
-
-			switch title.Align {
-			case AlignCenter:
-				start = x0 + 1 + (inside-len(runes))/2
-
-			case AlignEnd:
-				start = x1 - len(runes)
-
-			case AlignStart:
-				fallthrough
-			default:
-				start = x0 + 2
-			}
-
-			// Prevent overwriting border corners
-			if start < x0+1 {
-				start = x0 + 1
-			}
-
-			if start+len(runes) > x1 {
-				start = x1 - len(runes)
-			}
-
-			for i, r := range runes {
-				x := start + i
-				if x <= x0 || x >= x1 {
-					continue
+				// Truncate if needed.
+				if len(runes) > inside {
+					runes = runes[:inside]
 				}
-				screen.SetCell(x, y0, r, ts)
-			}
-		}
 
-		// Bottom border
-		if b.Bottom && y1 > y0 {
-			for x := x0 + 1; x < x1; x++ {
-				screen.SetCell(x, y1, c.Bottom, bs)
-			}
-		}
+				const padding = 1
 
-		// Left border
-		if b.Left {
-			for y := y0 + 1; y < y1; y++ {
-				screen.SetCell(x0, y, c.Left, bs)
-			}
-		}
+				var start int
+				switch b.Title.Align {
+				case AlignStart:
+					start = x0 + 1 + padding
 
-		// Right border
-		if b.Right && x1 > x0 {
-			for y := y0 + 1; y < y1; y++ {
-				screen.SetCell(x1, y, c.Right, bs)
-			}
-		}
+				case AlignEnd:
+					start = x1 - len(runes) - padding
 
-		// Corners
-		if g := cornerGlyph(c.TopLeft, c.Top, c.Left, b.Top, b.Left); g != 0 {
-			screen.SetCell(x0, y0, g, bs)
-		}
-		if g := cornerGlyph(c.TopRight, c.Top, c.Right, b.Top, b.Right); g != 0 {
-			screen.SetCell(x1, y0, g, bs)
-		}
-		if g := cornerGlyph(c.BottomLeft, c.Bottom, c.Left, b.Bottom, b.Left); g != 0 {
-			screen.SetCell(x0, y1, g, bs)
-		}
-		if g := cornerGlyph(c.BottomRight, c.Bottom, c.Right, b.Bottom, b.Right); g != 0 {
-			screen.SetCell(x1, y1, g, bs)
+				case AlignCenter:
+					fallthrough
+				default:
+					start = x0 + 1 + (inside-len(runes))/2
+				}
+
+				// Ensure title stays within the border.
+				minStart := x0 + 1
+				maxStart := x1 - len(runes)
+
+				if start < minStart {
+					start = minStart
+				}
+				if start > maxStart {
+					start = maxStart
+				}
+
+				titleStyle := mergeStyles(bs, b.Title.Style)
+
+				for i, r := range runes {
+					screen.SetCell(start+i, y0, r, titleStyle)
+				}
+			}
 		}
 	}
 

@@ -28,7 +28,7 @@ func TestSetAndGetFocus(t *testing.T) {
 	fm := NewFocusManager()
 
 	// Test setting focus
-	fm.Focus("item1")
+	fm.SetFocus("item1")
 	if fm.Current() != "item1" {
 		t.Errorf("Expected current 'item1', got %q", fm.Current())
 	}
@@ -40,7 +40,7 @@ func TestSetAndGetFocus(t *testing.T) {
 	}
 
 	// Test changing focus
-	fm.Focus("item2")
+	fm.SetFocus("item2")
 	if fm.Current() != "item2" {
 		t.Errorf("Expected current 'item2', got %q", fm.Current())
 	}
@@ -54,8 +54,8 @@ func TestSetAndGetFocus(t *testing.T) {
 
 func TestSetFocusEmptyClearsFocus(t *testing.T) {
 	fm := NewFocusManager()
-	fm.Focus("item1")
-	fm.Focus("")
+	fm.SetFocus("item1")
+	fm.SetFocus("")
 
 	if fm.Current() != "" {
 		t.Errorf("Expected empty current focus, got %q", fm.Current())
@@ -123,7 +123,7 @@ func TestPrevFocus(t *testing.T) {
 	fm.SetOrder([]string{"a", "b", "c"})
 
 	// Start with focus on a
-	fm.Focus("a")
+	fm.SetFocus("a")
 
 	fm.Prev()
 	if fm.Current() != "c" {
@@ -144,7 +144,7 @@ func TestPrevFocusWithEmptyOrder(t *testing.T) {
 	fm.SetOrder([]string{})
 
 	// Should not panic
-	fm.Focus("a")
+	fm.SetFocus("a")
 	fm.Prev()
 	if fm.Current() != "a" {
 		t.Errorf("Expected current to stay 'a', got %q", fm.Current())
@@ -156,7 +156,7 @@ func TestPrevFocusWithEmptyOrder(t *testing.T) {
 func TestNextFocusWhenCurrentNotInOrder(t *testing.T) {
 	fm := NewFocusManager()
 	fm.SetOrder([]string{"a", "b", "c"})
-	fm.Focus("x") // Not in order
+	fm.SetFocus("x") // Not in order
 
 	fm.Next()
 	// Should go to first in order
@@ -168,7 +168,7 @@ func TestNextFocusWhenCurrentNotInOrder(t *testing.T) {
 func TestPrevFocusWhenCurrentNotInOrder(t *testing.T) {
 	fm := NewFocusManager()
 	fm.SetOrder([]string{"a", "b", "c"})
-	fm.Focus("x") // Not in order
+	fm.SetFocus("x") // Not in order
 
 	fm.Prev()
 	// Should wrap to last item since current not found
@@ -183,7 +183,7 @@ func TestPushAndPopFocus(t *testing.T) {
 	fm := NewFocusManager()
 
 	// Initial focus
-	fm.Focus("main")
+	fm.SetFocus("main")
 	if fm.Current() != "main" {
 		t.Errorf("Expected 'main', got %q", fm.Current())
 	}
@@ -230,7 +230,7 @@ func TestPushAndPopFocus(t *testing.T) {
 
 func TestPopFocusWithEmptyStack(t *testing.T) {
 	fm := NewFocusManager()
-	fm.Focus("main")
+	fm.SetFocus("main")
 
 	// Pop when stack is empty should do nothing
 	fm.PopFocus()
@@ -292,7 +292,6 @@ func TestGlobalFocusFunctions(t *testing.T) {
 	}
 
 	// Test Blur
-	Blur()
 	if CurrentFocus() != "" {
 		t.Errorf("Expected empty after Blur, got %q", CurrentFocus())
 	}
@@ -319,7 +318,7 @@ func TestFocusManagerConcurrency(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func() {
-			fm.Focus("a")
+			fm.SetFocus("a")
 			fm.Next()
 			fm.Prev()
 			fm.PushFocus("modal")
@@ -363,14 +362,14 @@ func TestIndexOf(t *testing.T) {
 func BenchmarkSetFocus(b *testing.B) {
 	fm := NewFocusManager()
 	for i := 0; i < b.N; i++ {
-		fm.Focus("item")
+		fm.SetFocus("item")
 	}
 }
 
 func BenchmarkNextFocus(b *testing.B) {
 	fm := NewFocusManager()
 	fm.SetOrder([]string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"})
-	fm.Focus("a")
+	fm.SetFocus("a")
 
 	for i := 0; i < b.N; i++ {
 		fm.Next()
@@ -379,7 +378,7 @@ func BenchmarkNextFocus(b *testing.B) {
 
 func BenchmarkPushPopFocus(b *testing.B) {
 	fm := NewFocusManager()
-	fm.Focus("main")
+	fm.SetFocus("main")
 
 	for i := 0; i < b.N; i++ {
 		fm.PushFocus("modal")

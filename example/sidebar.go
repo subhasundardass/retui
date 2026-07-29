@@ -57,7 +57,13 @@ func Sidebar() retui.Element {
 		retui.NewStyle().Border(retui.Border{
 			Top: true, Right: true, Bottom: true, Left: true,
 			Chars: retui.BorderRounded, Color: retui.Blue,
-			Title: "Navigation",
+			Title: &retui.BorderTitle{
+				Text: "Navigation",
+				Style: retui.NewStyle().
+					Foreground(retui.Yellow).
+					Bold(true),
+				Align: retui.AlignStart,
+			},
 		}),
 
 		// Sidebar tree panel

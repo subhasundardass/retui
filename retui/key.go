@@ -7,9 +7,6 @@ type KeyCode int
 
 var Keys = make(chan Key, 4)
 
-// CurrentKey holds the key being processed in the current render pass.
-var CurrentKey Key
-
 const (
 	KeyNone KeyCode = iota
 

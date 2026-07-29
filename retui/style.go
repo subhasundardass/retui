@@ -6,16 +6,6 @@ import (
 	"strings"
 )
 
-type Title struct {
-	Text       string
-	Foreground Color
-	Background Color
-	Bold       bool
-	Italic     bool
-	Align      Alignment
-	Underline  bool
-}
-
 type Style struct {
 	bold      bool
 	italic    bool
@@ -25,7 +15,6 @@ type Style struct {
 	background Color
 
 	border Border
-	title  Title
 }
 
 func NewStyle() Style {
@@ -57,18 +46,10 @@ func (s Style) Underline(underline bool) Style {
 	return s
 }
 
-func (s Style) Border(b Border) Style {
-	if b.Chars == (BorderChars{}) {
-		b.Chars = BorderSharp
-	}
-	s.border = b
-	return s
-}
-
-func (s Style) Title(title Title) Style {
-	s.title = title
-	return s
-}
+// func (s Style) Title(title string) Style {
+// 	s.title = title
+// 	return s
+// }
 
 type BorderChars struct {
 	Top, Bottom, Left, Right                   rune
@@ -94,26 +75,30 @@ var (
 	}
 )
 
+type BorderTitle struct {
+	Text  string
+	Style Style
+	Align Alignment
+}
+
 type Border struct {
 	Top, Right, Bottom, Left bool
 	Chars                    BorderChars
 	Color                    Color
 
-	title Title
-}
-
-func BorderAll() Border {
-	return Border{
-		Top:    true,
-		Right:  true,
-		Bottom: true,
-		Left:   true,
-		Chars:  BorderSharp,
-	}
+	Title *BorderTitle
 }
 
 func (b Border) Any() bool {
 	return b.Top || b.Right || b.Bottom || b.Left
+}
+
+func (s Style) Border(b Border) Style {
+	if b.Chars == (BorderChars{}) {
+		b.Chars = BorderSharp
+	}
+	s.border = b
+	return s
 }
 
 type ColorType int

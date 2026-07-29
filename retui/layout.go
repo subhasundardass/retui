@@ -596,6 +596,20 @@ func resolveJustify(justify Justify, start, innerMainSize, usedMain, baseGap, ch
 // layout assigns a concrete Rect to n and all its descendants given the space
 // offered by the parent (top-down traversal). Appends Rects to out in
 // depth-first, pre-order.
+//
+// Sizing resolution happens in three passes over the children:
+//
+//  1. Fixed/Fit/Percent children are sized first, in child order. Their
+//     main-axis size is clamped against the space that remains after
+//     already-placed siblings AND all gaps the row/column will need to
+//     insert — this is what guarantees a Fixed-width (or Fixed-height)
+//     parent never has its gap silently squeezed out by earlier children
+//     overclaiming space that a gap needed.
+//  2. Grow children split whatever main-axis space is left over, in
+//     proportion to their weight, after both used space and total gap
+//     have been subtracted.
+//  3. Children are positioned along the main axis (respecting Justify),
+//     and recursed into.
 func layout(n *LayoutNode, into Rect, out *[]Rect) {
 	// Append this node's rect to output.
 	*out = append(*out, into)
@@ -624,6 +638,14 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 	totalGap := n.gap * (len(n.Children) - 1)
 
 	// First pass: resolve fixed, fit, and percent children; collect grow children.
+	//
+	// The clamp cap for Fixed/Fit children is innerMainSize - totalGap - usedMainAxis,
+	// NOT innerMainSize - usedMainAxis. Reserving totalGap here — before any
+	// child claims space — is what prevents Fixed/Fit siblings from consuming
+	// the room the layout will need for gaps between them. Without this
+	// reservation, a parent with a concrete (e.g. Fixed) main-axis size can end
+	// up with children whose summed widths + gaps exceed that size, causing
+	// overflow that visually looks like "the gap isn't being applied."
 	usedMainAxis := 0
 	totalGrowWeight := 0
 	growIndices := make([]int, 0, len(n.Children))
@@ -644,7 +666,7 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		if n.Direction == Row {
 			switch child.WidthSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Width = clampMax(child.intrinsicWidth, max(innerMainSize-usedMainAxis, 0))
+				childRect.Width = clampMax(child.intrinsicWidth, max(innerMainSize-totalGap-usedMainAxis, 0))
 				usedMainAxis += childRect.Width
 			case SizingPercent:
 				childRect.Width = innerMainSize * child.WidthSizing.Value / 100
@@ -657,7 +679,7 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 			// Column direction.
 			switch child.HeightSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Height = clampMax(child.intrinsicHeight, max(innerMainSize-usedMainAxis, 0))
+				childRect.Height = clampMax(child.intrinsicHeight, max(innerMainSize-totalGap-usedMainAxis, 0))
 				usedMainAxis += childRect.Height
 			case SizingPercent:
 				childRect.Height = innerMainSize * child.HeightSizing.Value / 100
