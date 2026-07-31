@@ -394,9 +394,13 @@ func buildSelectElement(
 
 	textStyle := config.Style
 	if inputHighlighted {
-		textStyle = textStyle.Foreground(retui.BrightWhite).Background(retui.Blue).Bold(true)
+		textStyle = textStyle.
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
+			Bold(true)
 	} else {
-		textStyle = textStyle.Foreground(retui.BrightBlack).Background(retui.Hex("#0c0c0c")).Bold(true)
+		textStyle = textStyle.
+			Foreground(retui.White).Bold(true)
 	}
 
 	arrowStyle := retui.NewStyle().Foreground(retui.BrightBlack).Bold(true)

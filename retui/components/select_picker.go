@@ -29,7 +29,20 @@ type SelectPickerField struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
-
+// colorPicker := SelectPicker().
+//
+//	ID("color").
+//	Options([]string{"Red", "Green", "Blue", "Yellow"}).
+//	Selected(0).
+//	Width(20).
+//	Prefix("🎨 ").
+//	Suffix(" ✓").
+//	OnChange(func(id string, selected int, value string) {
+//		println("Selected:", value, "at index:", selected)
+//	}).
+//	OnSubmit(func(id string, selected int, value string) {
+//		println("Submitted:", value)
+//	})
 func SelectPicker() *SelectPickerField {
 	return &SelectPickerField{
 		config: SelectPickerConfig{
@@ -249,41 +262,5 @@ render:
 		},
 		retui.NewStyle(),
 		elements...,
-	)
-}
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-func ExampleSelectPickerUsage() retui.Element {
-	// Simple select picker
-	colorPicker := SelectPicker().
-		ID("color").
-		Options([]string{"Red", "Green", "Blue", "Yellow"}).
-		Selected(0).
-		Width(20).
-		Prefix("🎨 ").
-		Suffix(" ✓").
-		OnChange(func(id string, selected int, value string) {
-			println("Selected:", value, "at index:", selected)
-		}).
-		OnSubmit(func(id string, selected int, value string) {
-			println("Submitted:", value)
-		})
-
-	// Size picker
-	sizePicker := SelectPicker().
-		ID("size").
-		Options([]string{"Small", "Medium", "Large", "XL"}).
-		Selected(1).
-		Prefix("📏 ")
-
-	return retui.Box(
-		retui.Props{
-			Direction: retui.Column,
-		},
-		retui.NewStyle(),
-		colorPicker.Render(),
-		retui.Text(" ", retui.NewStyle()),
-		sizePicker.Render(),
 	)
 }

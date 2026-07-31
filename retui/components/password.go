@@ -34,6 +34,21 @@ type PasswordFeild struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
+// func ExamplePasswordUsage() retui.Element {
+// 	// Simple password input
+// 	passwordInput := Password().
+// 		ID("password").
+// 		Placeholder("Enter password").
+// 		Width(30).
+// 		MinLength(8).
+// 		MaxLength(20).
+// 		Suffix(" ✓").
+// 		OnChange(func(id string, value string) {
+// 			println("Password changed")
+// 		}).
+// 		OnSubmit(func(id string, value string) {
+// 			println("Password submitted")
+// 		})
 
 func Password() *PasswordFeild {
 	return &PasswordFeild{
@@ -382,43 +397,3 @@ func renderPasswordError(config *PasswordConfig, msg string) retui.Element {
 		retui.Text("⚠️ "+msg, retui.NewStyle().Foreground(retui.Red)),
 	)
 }
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-// func ExamplePasswordUsage() retui.Element {
-// 	// Simple password input
-// 	passwordInput := Password().
-// 		ID("password").
-// 		Placeholder("Enter password").
-// 		Width(30).
-// 		MinLength(8).
-// 		MaxLength(20).
-// 		Prefix("🔒 ").
-// 		Suffix(" ✓").
-// 		OnChange(func(id string, value string) {
-// 			println("Password changed")
-// 		}).
-// 		OnSubmit(func(id string, value string) {
-// 			println("Password submitted")
-// 		})
-
-// 	// Password with custom mask
-// 	customMask := Password().
-// 		ID("pin").
-// 		Placeholder("Enter PIN").
-// 		Width(20).
-// 		MaskChar("*").
-// 		ShowLastChar(false).
-// 		MaxLength(4).
-// 		Prefix("PIN: ")
-
-// 	return retui.Box(
-// 		retui.Props{
-// 			Direction: retui.Column,
-// 		},
-// 		retui.NewStyle(),
-// 		passwordInput.Render(),
-// 		retui.Text(" ", retui.NewStyle()),
-// 		customMask.Render(),
-// 	)
-// }

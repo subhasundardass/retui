@@ -41,7 +41,23 @@ type DateInputField struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
-
+//
+//	func ExampleDateUsage() retui.Element {
+//		// Date input with format and a range constraint.
+//		dateInput := DateInput().
+//			ID("birthday").
+//			Format("YYYY-MM-DD").
+//			Placeholder("Enter date").
+//			Width(25).
+//			Suffix(" ✓").
+//			Min("1900-01-01").
+//			Max("2026-12-31").
+//			OnChange(func(id string, value string) {
+//				fmt.Printf("Date changed to: %s\n", value)
+//			}).
+//			OnSubmit(func(id string, value string) {
+//				fmt.Printf("Date submitted: %s\n", value)
+//			})
 func DateInput() *DateInputField {
 	return &DateInputField{
 		config: DateConfig{
@@ -604,42 +620,3 @@ func renderDateError(config *DateConfig, msg string) retui.Element {
 		retui.Text(msg, retui.NewStyle().Foreground(retui.Red)),
 	)
 }
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-// func ExampleDateUsage() retui.Element {
-// 	// Date input with format and a range constraint.
-// 	dateInput := DateInput().
-// 		ID("birthday").
-// 		Format("YYYY-MM-DD").
-// 		Placeholder("Enter date").
-// 		Width(25).
-// 		Prefix("📅 ").
-// 		Suffix(" ✓").
-// 		Min("1900-01-01").
-// 		Max("2026-12-31").
-// 		OnChange(func(id string, value string) {
-// 			fmt.Printf("Date changed to: %s\n", value)
-// 		}).
-// 		OnSubmit(func(id string, value string) {
-// 			fmt.Printf("Date submitted: %s\n", value)
-// 		})
-//
-// 	// Date input with a different field order.
-// 	dateInput2 := DateInput().
-// 		ID("meeting").
-// 		Format("MM/DD/YYYY").
-// 		Placeholder("MM/DD/YYYY").
-// 		Width(20).
-// 		Prefix("📆 ")
-//
-// 	return retui.Box(
-// 		retui.Props{
-// 			Direction: retui.Column,
-// 		},
-// 		retui.NewStyle(),
-// 		dateInput.Render(),
-// 		retui.Text(" ", retui.NewStyle()),
-// 		dateInput2.Render(),
-// 	)
-// }

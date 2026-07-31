@@ -38,8 +38,8 @@ func Button() *ButtonField {
 			Label:       "",
 			Width:       0,
 			Style:       retui.NewStyle(),
-			HoverStyle:  retui.NewStyle().Foreground(retui.Cyan).Bold(true),
-			ActiveStyle: retui.NewStyle().Foreground(retui.White).Background(retui.Blue).Bold(true),
+			HoverStyle:  retui.NewStyle().Foreground(retui.White).Background(retui.Navy).Bold(true),
+			ActiveStyle: retui.NewStyle().Foreground(retui.White).Background(retui.Navy).Bold(true),
 			Prefix:      "",
 			Suffix:      "",
 			OnClick:     nil,
@@ -189,13 +189,13 @@ render:
 	}
 
 	// Add decorative brackets for button appearance
-	display = "[ " + display + " ]"
+	display = " " + display + " "
 
 	// Pad to width if specified
 	if config.Width > 0 {
 		displayLen := len([]rune(display))
 		if displayLen < config.Width {
-			padding := strings.Repeat(" ", config.Width-displayLen)
+			padding := strings.Repeat("", config.Width-displayLen)
 			display = display + padding
 		}
 	}
@@ -203,16 +203,16 @@ render:
 	// Add prefix/suffix
 	prefixStyle := retui.NewStyle()
 	if focused || isActive {
-		prefixStyle = prefixStyle.Foreground(retui.Cyan).Bold(true)
+		prefixStyle = prefixStyle.Foreground(retui.White).Bold(true)
 	} else {
-		prefixStyle = prefixStyle.Foreground(retui.BrightBlack)
+		prefixStyle = prefixStyle.Foreground(retui.Navy)
 	}
 
 	suffixStyle := retui.NewStyle()
 	if focused || isActive {
-		suffixStyle = suffixStyle.Foreground(retui.Cyan).Bold(true)
+		suffixStyle = suffixStyle.Foreground(retui.White).Bold(true)
 	} else {
-		suffixStyle = suffixStyle.Foreground(retui.BrightBlack)
+		suffixStyle = suffixStyle.Foreground(retui.Navy)
 	}
 
 	// Build elements
@@ -235,52 +235,5 @@ render:
 		},
 		retui.NewStyle(),
 		elements...,
-	)
-}
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-func ExampleButtonUsage() retui.Element {
-	// Simple button
-	submitBtn := Button().
-		ID("submit").
-		Label("Submit").
-		Width(20).
-		Prefix("▶ ").
-		OnClick(func(id string) {
-			println("Button", id, "clicked!")
-		})
-
-	// Button with custom styles
-	cancelBtn := Button().
-		ID("cancel").
-		Label("Cancel").
-		Style(retui.NewStyle().Foreground(retui.Red)).
-		HoverStyle(retui.NewStyle().Foreground(retui.Red).Bold(true)).
-		ActiveStyle(retui.NewStyle().Foreground(retui.White).Background(retui.Red).Bold(true)).
-		OnClick(func(id string) {
-			println("Button", id, "clicked!")
-		})
-
-	// Button with prefix/suffix
-	deleteBtn := Button().
-		ID("delete").
-		Label("Delete").
-		Prefix("🗑 ").
-		Suffix(" ✓").
-		OnClick(func(id string) {
-			println("Button", id, "clicked!")
-		})
-
-	return retui.Box(
-		retui.Props{
-			Direction: retui.Column,
-		},
-		retui.NewStyle(),
-		submitBtn.Render(),
-		retui.Text(" ", retui.NewStyle()),
-		cancelBtn.Render(),
-		retui.Text(" ", retui.NewStyle()),
-		deleteBtn.Render(),
 	)
 }

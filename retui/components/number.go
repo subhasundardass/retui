@@ -396,14 +396,14 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 	justGainedFocus := focused && !wasFocused
 
 	if focused && !wasFocused {
-		wasFocused = true
+		// wasFocused = true
 		setWasFocused(true)
 		if config.SelectAllOnFocus {
 			selected = true
 			setSelected(true)
 		}
 	} else if !focused && wasFocused {
-		wasFocused = false
+		// wasFocused = false
 		setWasFocused(false)
 		selected = false
 		setSelected(false)
@@ -629,19 +629,17 @@ render:
 	if focused {
 		if selected {
 			textStyle = textStyle.
-				Foreground(retui.Black).
-				Background(retui.Cyan).
+				Foreground(retui.White).Bold(true).
+				Background(retui.Gray(2)).
 				Bold(true)
 		} else {
 			textStyle = textStyle.
-				Foreground(retui.White).
-				Background(retui.Blue).
-				Bold(true)
+				Foreground(retui.White).Bold(true)
+
 		}
 	} else {
 		textStyle = textStyle.
-			Foreground(retui.BrightBlack).
-			Bold(true)
+			Foreground(retui.White).Bold(true)
 	}
 
 	// Check validation against the committed value (not the in-progress text)

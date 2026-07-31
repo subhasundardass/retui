@@ -1,4 +1,4 @@
-.PHONY: build debug kill attach clean run, tidy, screen
+.PHONY: build debug kill attach clean run, tidy, screen, test, lint, log
 
 APP_NAME   := app-debug
 CMD_PATH   := ./cmd/app
@@ -57,3 +57,10 @@ screen: ## Generate a new screen (Usage: make screen NAME=general)
 	fi
 	@printf "${GREEN}📄 Generating screen: $(NAME)...${NC}\n"
 	@go run ./cmd/retui-gen -make screen:$(NAME)	
+
+test:
+	./test-workflow.sh
+
+
+log:
+	tail -n +1 -f retui.log

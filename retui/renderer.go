@@ -92,7 +92,7 @@ func wrapText(text string, maxWidth int) []string {
 			// Word doesn't fit: flush line and start fresh.
 			lines = append(lines, line.String())
 			line.Reset()
-			lineWidth = 0
+			// lineWidth = 0
 
 			// Hard-break oversized word if necessary.
 			for wordWidth > maxWidth {
@@ -368,6 +368,10 @@ func buildLayoutTree(element Element) *LayoutNode {
 		paddingRight:  padRight,
 		paddingBottom: padBottom,
 		paddingLeft:   padLeft,
+		marginTop:     p.MarginTop,
+		marginRight:   p.MarginRight,
+		marginBottom:  p.MarginBottom,
+		marginLeft:    p.MarginLeft,
 		gap:           p.Gap,
 		alignment:     p.Align,
 		justify:       p.Justify,

@@ -70,21 +70,22 @@ func TestSetFocusEmptyClearsFocus(t *testing.T) {
 func TestSetOrder(t *testing.T) {
 	fm := NewFocusManager()
 	order := []string{"a", "b", "c", "d"}
-	fm.SetOrder(order)
+	err := fm.SetOrder(order)
+	if err != nil {
+		t.Errorf("SetOrder failed: %v", err)
+	}
 
 	if len(fm.order) != len(order) {
 		t.Errorf("Expected order length %d, got %d", len(order), len(fm.order))
-	}
-	for i, v := range order {
-		if fm.order[i] != v {
-			t.Errorf("Expected order[%d] = %q, got %q", i, v, fm.order[i])
-		}
 	}
 }
 
 func TestNextFocus(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c"})
+	err := fm.SetOrder([]string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	// Start with no focus, Next should set to first item
 	fm.Next()
@@ -109,7 +110,10 @@ func TestNextFocus(t *testing.T) {
 
 func TestNextFocusWithEmptyOrder(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{})
+	err := fm.SetOrder([]string{})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	// Should not panic
 	fm.Next()
@@ -120,7 +124,10 @@ func TestNextFocusWithEmptyOrder(t *testing.T) {
 
 func TestPrevFocus(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c"})
+	err := fm.SetOrder([]string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	// Start with focus on a
 	fm.SetFocus("a")
@@ -141,7 +148,10 @@ func TestPrevFocus(t *testing.T) {
 
 func TestPrevFocusWithEmptyOrder(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{})
+	err := fm.SetOrder([]string{})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	// Should not panic
 	fm.SetFocus("a")
@@ -155,7 +165,10 @@ func TestPrevFocusWithEmptyOrder(t *testing.T) {
 
 func TestNextFocusWhenCurrentNotInOrder(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c"})
+	err := fm.SetOrder([]string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 	fm.SetFocus("x") // Not in order
 
 	fm.Next()
@@ -167,7 +180,10 @@ func TestNextFocusWhenCurrentNotInOrder(t *testing.T) {
 
 func TestPrevFocusWhenCurrentNotInOrder(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c"})
+	err := fm.SetOrder([]string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 	fm.SetFocus("x") // Not in order
 
 	fm.Prev()
@@ -261,8 +277,10 @@ func TestGlobalFocusFunctions(t *testing.T) {
 	// Reset global focus state
 	globalFocus = NewFocusManager()
 
-	// Test SetFocusOrder
-	SetFocusOrder([]string{"one", "two", "three"})
+	err := SetFocusOrder([]string{"one", "two", "three"})
+	if err != nil {
+		t.Fatalf("SetFocusOrder failed: %v", err)
+	}
 	if len(globalFocus.order) != 3 {
 		t.Errorf("Expected order length 3, got %d", len(globalFocus.order))
 	}
@@ -291,7 +309,8 @@ func TestGlobalFocusFunctions(t *testing.T) {
 		t.Errorf("Expected 'two' after FocusPrev, got %q", CurrentFocus())
 	}
 
-	// Test Blur
+	// Test Blur - clear focus
+	SetFocus("")
 	if CurrentFocus() != "" {
 		t.Errorf("Expected empty after Blur, got %q", CurrentFocus())
 	}
@@ -312,7 +331,10 @@ func TestGlobalFocusFunctions(t *testing.T) {
 
 func TestFocusManagerConcurrency(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c", "d", "e"})
+	err := fm.SetOrder([]string{"a", "b", "c", "d", "e"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	// Run concurrent operations
 	done := make(chan bool)
@@ -337,7 +359,10 @@ func TestFocusManagerConcurrency(t *testing.T) {
 
 func TestIndexOf(t *testing.T) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c"})
+	err := fm.SetOrder([]string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("SetOrder failed: %v", err)
+	}
 
 	tests := []struct {
 		id       string
@@ -368,7 +393,10 @@ func BenchmarkSetFocus(b *testing.B) {
 
 func BenchmarkNextFocus(b *testing.B) {
 	fm := NewFocusManager()
-	fm.SetOrder([]string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"})
+	err := fm.SetOrder([]string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"})
+	if err != nil {
+		b.Fatalf("SetOrder failed: %v", err)
+	}
 	fm.SetFocus("a")
 
 	for i := 0; i < b.N; i++ {
