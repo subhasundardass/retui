@@ -122,6 +122,15 @@ type LayoutNode struct {
 	paddingLeft   int
 	paddingRight  int
 
+	// margin reserves space outside the node's border box, between it and
+	// adjacent siblings or the parent's edge. Unlike padding (interior),
+	// margin does not shrink the node's own content area — it only affects
+	// how much room the node claims within its parent's flow.
+	marginTop    int
+	marginBottom int
+	marginLeft   int
+	marginRight  int
+
 	// gap is the minimum spacing between adjacent children on the main axis.
 	gap int
 
@@ -234,6 +243,27 @@ func (l *LayoutNode) WithPaddingUniform(padding int) *LayoutNode {
 	l.paddingRight = padding
 	l.paddingBottom = padding
 	l.paddingLeft = padding
+	return l
+}
+
+// WithMargin sets exterior spacing (top, right, bottom, left) and returns the node for chaining.
+// Margin reserves space outside the node's border box, between it and adjacent
+// siblings or the parent's edge — unlike padding, which is interior space.
+// Margin and Gap both add spacing between siblings and are additive, not merged.
+func (l *LayoutNode) WithMargin(top, right, bottom, left int) *LayoutNode {
+	l.marginTop = top
+	l.marginRight = right
+	l.marginBottom = bottom
+	l.marginLeft = left
+	return l
+}
+
+// WithMarginUniform sets uniform margin on all sides and returns the node for chaining.
+func (l *LayoutNode) WithMarginUniform(margin int) *LayoutNode {
+	l.marginTop = margin
+	l.marginRight = margin
+	l.marginBottom = margin
+	l.marginLeft = margin
 	return l
 }
 
@@ -358,72 +388,63 @@ func hasReflow(n *LayoutNode) bool {
 // Reflow callbacks are NOT invoked during measure (cross-axis size unknown);
 // previously-computed reflow heights are preserved for ancestor sizing.
 func measure(n *LayoutNode) (int, int) {
-	// Measure children first (bottom-up).
 	for _, child := range n.Children {
 		child.intrinsicWidth, child.intrinsicHeight = measure(child)
 	}
 
 	width, height := 0, 0
 
-	// Calculate gap contribution (gap between adjacent children).
 	gaps := 0
 	if len(n.Children) > 1 {
 		gaps = n.gap * (len(n.Children) - 1)
 	}
 
-	// Resolve width based on sizing mode.
 	switch n.WidthSizing.Mode {
 	case SizingFixed:
 		width = n.WidthSizing.Value
 
 	case SizingFit:
 		if n.Direction == Row {
-			// Row: sum children widths + gaps.
 			for _, child := range n.Children {
-				width += child.intrinsicWidth
+				width += child.intrinsicWidth + child.marginLeft + child.marginRight
 			}
 			width += gaps
 		} else {
-			// Column: max child width.
 			for _, child := range n.Children {
-				if child.intrinsicWidth > width {
-					width = child.intrinsicWidth
+				cw := child.intrinsicWidth + child.marginLeft + child.marginRight
+				if cw > width {
+					width = cw
 				}
 			}
 		}
 
 	case SizingGrow, SizingPercent:
-		// Cannot resolve without parent size; use 0.
 		width = 0
 	}
 
-	// Resolve height based on sizing mode.
 	switch n.HeightSizing.Mode {
 	case SizingFixed:
 		height = n.HeightSizing.Value
 
 	case SizingFit:
 		if n.Direction != Row {
-			// Column: sum children heights + gaps.
 			for _, child := range n.Children {
-				height += child.intrinsicHeight
+				height += child.intrinsicHeight + child.marginTop + child.marginBottom
 			}
 			height += gaps
 		} else {
-			// Row: max child height.
 			for _, child := range n.Children {
-				if child.intrinsicHeight > height {
-					height = child.intrinsicHeight
+				ch := child.intrinsicHeight + child.marginTop + child.marginBottom
+				if ch > height {
+					height = ch
 				}
 			}
 		}
 
 	case SizingGrow, SizingPercent:
-		// Cannot resolve without parent size; use 0.
 		height = 0
 	}
 
-	// Add padding for SizingFit dimensions.
 	if n.WidthSizing.Mode == SizingFit {
 		width += n.paddingLeft + n.paddingRight
 	}
@@ -431,9 +452,6 @@ func measure(n *LayoutNode) (int, int) {
 		height += n.paddingTop + n.paddingBottom
 	}
 
-	// Preserve reflow height from a prior layout pass.
-	// Reflow has access to actual allocated width (more accurate than measure's
-	// estimation), so once computed, we trust it across measure passes.
 	if n.reflow != nil && n.intrinsicHeight > height {
 		height = n.intrinsicHeight
 	}
@@ -491,63 +509,105 @@ func max(a, b int) int {
 	return b
 }
 
+// marginMainStart returns a node's margin at the leading edge of the main axis
+// (left for Row, top for Column).
+func marginMainStart(n *LayoutNode, dir Direction) int {
+	if dir == Row {
+		return n.marginLeft
+	}
+	return n.marginTop
+}
+
+// marginMainEnd returns a node's margin at the trailing edge of the main axis
+// (right for Row, bottom for Column).
+func marginMainEnd(n *LayoutNode, dir Direction) int {
+	if dir == Row {
+		return n.marginRight
+	}
+	return n.marginBottom
+}
+
+// marginCrossStart returns a node's margin at the leading edge of the cross axis
+// (top for Row, left for Column).
+func marginCrossStart(n *LayoutNode, dir Direction) int {
+	if dir == Row {
+		return n.marginTop
+	}
+	return n.marginLeft
+}
+
+// marginCrossEnd returns a node's margin at the trailing edge of the cross axis
+// (bottom for Row, right for Column).
+func marginCrossEnd(n *LayoutNode, dir Direction) int {
+	if dir == Row {
+		return n.marginBottom
+	}
+	return n.marginRight
+}
+
 // resolveCrossSize computes a child's size on the cross axis.
 // If parent alignment is AlignStretch, child takes full cross-axis space.
 // Otherwise, child size is based on its own cross-axis sizing mode.
 func resolveCrossSize(parent *LayoutNode, child *LayoutNode, into Rect) int {
+	fullCross := crossAvailableSize(into, parent.Direction)
+	availableCross := fullCross - marginCrossStart(child, parent.Direction) - marginCrossEnd(child, parent.Direction)
+	if availableCross < 0 {
+		availableCross = 0
+	}
+
 	if parent.alignment == AlignStretch {
-		return crossAvailableSize(into, parent.Direction)
+		return availableCross
 	}
 
 	if parent.Direction == Row {
-		// Cross axis is height (Y).
 		switch child.HeightSizing.Mode {
 		case SizingFixed, SizingFit:
-			return clampMax(child.intrinsicHeight, into.Height)
+			return clampMax(child.intrinsicHeight, availableCross)
 		case SizingPercent:
-			return into.Height * child.HeightSizing.Value / 100
+			return fullCross * child.HeightSizing.Value / 100
 		case SizingGrow:
-			return into.Height
+			return availableCross
 		}
 	}
 
-	// Column: cross axis is width (X).
 	switch child.WidthSizing.Mode {
 	case SizingFixed, SizingFit:
-		return clampMax(child.intrinsicWidth, into.Width)
+		return clampMax(child.intrinsicWidth, availableCross)
 	case SizingPercent:
-		return into.Width * child.WidthSizing.Value / 100
+		return fullCross * child.WidthSizing.Value / 100
 	case SizingGrow:
-		return into.Width
+		return availableCross
 	}
 
 	return 0
 }
 
 // applyCrossAlignment positions a child on the cross axis based on the parent's
-// alignment and the available space.
-func applyCrossAlignment(parent *LayoutNode, childRect *Rect, into Rect) {
+// alignment, the available space, and the child's own cross-axis margin.
+func applyCrossAlignment(parent *LayoutNode, child *LayoutNode, childRect *Rect, into Rect) {
 	if parent.Direction == Row {
-		// Cross axis is Y (vertical).
+		marginStart := child.marginTop
+		marginEnd := child.marginBottom
 		switch parent.alignment {
 		case AlignCenter:
-			childRect.Y = into.Y + (into.Height-childRect.Height)/2
+			childRect.Y = into.Y + marginStart + (into.Height-marginStart-marginEnd-childRect.Height)/2
 		case AlignEnd:
-			childRect.Y = into.Y + (into.Height - childRect.Height)
+			childRect.Y = into.Y + into.Height - marginEnd - childRect.Height
 		default: // AlignStart, AlignStretch
-			childRect.Y = into.Y
+			childRect.Y = into.Y + marginStart
 		}
 		return
 	}
 
-	// Column: cross axis is X (horizontal).
+	marginStart := child.marginLeft
+	marginEnd := child.marginRight
 	switch parent.alignment {
 	case AlignCenter:
-		childRect.X = into.X + (into.Width-childRect.Width)/2
+		childRect.X = into.X + marginStart + (into.Width-marginStart-marginEnd-childRect.Width)/2
 	case AlignEnd:
-		childRect.X = into.X + (into.Width - childRect.Width)
+		childRect.X = into.X + into.Width - marginEnd - childRect.Width
 	default: // AlignStart, AlignStretch
-		childRect.X = into.X
+		childRect.X = into.X + marginStart
 	}
 }
 
@@ -596,17 +656,28 @@ func resolveJustify(justify Justify, start, innerMainSize, usedMain, baseGap, ch
 // layout assigns a concrete Rect to n and all its descendants given the space
 // offered by the parent (top-down traversal). Appends Rects to out in
 // depth-first, pre-order.
+//
+// Sizing resolution happens in three passes over the children:
+//
+//  1. Fixed/Fit/Percent children are sized first, in child order. Their
+//     main-axis size is clamped against the space that remains after
+//     already-placed siblings AND all gaps the row/column will need to
+//     insert — this is what guarantees a Fixed-width (or Fixed-height)
+//     parent never has its gap silently squeezed out by earlier children
+//     overclaiming space that a gap needed.
+//  2. Grow children split whatever main-axis space is left over, in
+//     proportion to their weight, after both used space and total gap
+//     have been subtracted.
+//  3. Children are positioned along the main axis (respecting Justify),
+//     and recursed into.
 func layout(n *LayoutNode, into Rect, out *[]Rect) {
-	// Append this node's rect to output.
 	*out = append(*out, into)
 
-	// Shrink the inner layout area by padding.
 	into.X += n.paddingLeft
 	into.Y += n.paddingTop
 	into.Width -= n.paddingLeft + n.paddingRight
 	into.Height -= n.paddingTop + n.paddingBottom
 
-	// Clamp negative dimensions to 0 (result of over-constrained padding).
 	if into.Width < 0 {
 		into.Width = 0
 	}
@@ -614,16 +685,21 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		into.Height = 0
 	}
 
-	// No children: leaf node.
 	if len(n.Children) == 0 {
 		return
 	}
 
-	// Compute available space on the main axis.
 	innerMainSize := mainSize(into, n.Direction)
 	totalGap := n.gap * (len(n.Children) - 1)
 
-	// First pass: resolve fixed, fit, and percent children; collect grow children.
+	// Sum of every child's main-axis margin (start + end). Reserved up front,
+	// exactly like totalGap, so Fixed/Fit/Percent siblings can't consume the
+	// room margins need.
+	totalMainMargin := 0
+	for _, child := range n.Children {
+		totalMainMargin += marginMainStart(child, n.Direction) + marginMainEnd(child, n.Direction)
+	}
+
 	usedMainAxis := 0
 	totalGrowWeight := 0
 	growIndices := make([]int, 0, len(n.Children))
@@ -632,19 +708,17 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 	for _, child := range n.Children {
 		var childRect Rect
 
-		// Resolve cross-axis size (height for Row, width for Column).
 		setCrossSize(&childRect, n.Direction, resolveCrossSize(n, child, into))
 
-		// For Column: invoke reflow now that cross-axis (width) is known.
 		if n.Direction == Column && child.reflow != nil {
 			child.intrinsicHeight = child.reflow(childRect.Width)
 		}
 
-		// Resolve main-axis size based on sizing mode.
 		if n.Direction == Row {
 			switch child.WidthSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Width = clampMax(child.intrinsicWidth, max(innerMainSize-usedMainAxis, 0))
+				cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
+				childRect.Width = clampMax(child.intrinsicWidth, cap)
 				usedMainAxis += childRect.Width
 			case SizingPercent:
 				childRect.Width = innerMainSize * child.WidthSizing.Value / 100
@@ -654,10 +728,10 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 				growIndices = append(growIndices, len(childRects))
 			}
 		} else {
-			// Column direction.
 			switch child.HeightSizing.Mode {
 			case SizingFixed, SizingFit:
-				childRect.Height = clampMax(child.intrinsicHeight, max(innerMainSize-usedMainAxis, 0))
+				cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
+				childRect.Height = clampMax(child.intrinsicHeight, cap)
 				usedMainAxis += childRect.Height
 			case SizingPercent:
 				childRect.Height = innerMainSize * child.HeightSizing.Value / 100
@@ -671,8 +745,7 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		childRects = append(childRects, childRect)
 	}
 
-	// Second pass: distribute remaining space to Grow children.
-	remaining := max(innerMainSize-totalGap-usedMainAxis, 0)
+	remaining := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
 
 	if totalGrowWeight > 0 {
 		remainingWeight := totalGrowWeight
@@ -696,7 +769,6 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		}
 	}
 
-	// For Row: invoke reflow now that widths are known.
 	if n.Direction == Row {
 		for i, child := range n.Children {
 			if child.reflow == nil {
@@ -709,8 +781,9 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		}
 	}
 
-	// Compute total used space and resolve justify for main-axis positioning.
-	usedMain := 0
+	// usedMain includes margin: it's space already claimed and unavailable
+	// for justify to distribute.
+	usedMain := totalMainMargin
 	for _, childRect := range childRects {
 		usedMain += mainSize(childRect, n.Direction)
 	}
@@ -724,25 +797,24 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		len(n.Children),
 	)
 
-	// Third pass: position children and recurse.
 	for i, child := range n.Children {
 		childRect := childRects[i]
+		marginStart := marginMainStart(child, n.Direction)
+		marginEnd := marginMainEnd(child, n.Direction)
 
-		// Set main-axis position.
+		cursor += marginStart
+
 		if n.Direction == Row {
 			childRect.X = cursor
 		} else {
 			childRect.Y = cursor
 		}
 
-		// Apply cross-axis alignment.
-		applyCrossAlignment(n, &childRect, into)
+		applyCrossAlignment(n, child, &childRect, into)
 
-		// Recurse into child.
 		layout(child, childRect, out)
 
-		// Advance cursor for next child.
-		cursor += mainSize(childRect, n.Direction)
+		cursor += mainSize(childRect, n.Direction) + marginEnd
 		if i < len(n.Children)-1 {
 			cursor += gap
 		}

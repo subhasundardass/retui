@@ -272,14 +272,12 @@ render:
 	textStyle := config.Style
 	if focused {
 		textStyle = textStyle.
-			Foreground(retui.BrightWhite).
-			Background(retui.Blue).
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
 			Bold(true)
 	} else {
 		textStyle = textStyle.
-			Foreground(retui.BrightBlack).
-			Background(retui.Hex("#0c0c0c")).
-			Bold(true)
+			Foreground(retui.White).Bold(true)
 	}
 
 	// Border color based on focus and validation
@@ -331,7 +329,7 @@ render:
 	// Apply validation styling
 	textStyleForDisplay := textStyle
 	if !isValid && !focused {
-		textStyleForDisplay = textStyleForDisplay.Foreground(retui.Red)
+		textStyleForDisplay = textStyle
 	}
 
 	elements = append(elements, retui.Text(paddedDisplay, textStyleForDisplay))

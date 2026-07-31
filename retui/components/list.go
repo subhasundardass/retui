@@ -31,7 +31,21 @@ type ListField struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
-
+//
+//	func ExampleListUsage() retui.Element {
+//		// Simple list
+//		fruitList := List().
+//			ID("fruits").
+//			Items([]string{"Apple", "Banana", "Orange", "Grape", "Mango"}).
+//			Selected(0).
+//			Width(20).
+//			Suffix(" ✓").
+//			OnSelect(func(id string, index int, value string) {
+//				println("Selected:", value, "at index:", index)
+//			}).
+//			OnSubmit(func(id string, index int, value string) {
+//				println("Submitted:", value)
+//			})
 func List() *ListField {
 	return &ListField{
 		config: ListConfig{
@@ -273,9 +287,10 @@ render:
 	}
 
 	// Add the list items
-	for _, child := range children {
-		elements = append(elements, child)
-	}
+	elements = append(elements, children...)
+	// for _, child := range children {
+	// 	elements = append(elements, child)
+	// }
 
 	if config.Suffix != "" {
 		suffixStyle := retui.NewStyle()
@@ -296,40 +311,3 @@ render:
 		elements...,
 	)
 }
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-// func ExampleListUsage() retui.Element {
-// 	// Simple list
-// 	fruitList := List().
-// 		ID("fruits").
-// 		Items([]string{"Apple", "Banana", "Orange", "Grape", "Mango"}).
-// 		Selected(0).
-// 		Width(20).
-// 		Prefix("📋 ").
-// 		Suffix(" ✓").
-// 		OnSelect(func(id string, index int, value string) {
-// 			println("Selected:", value, "at index:", index)
-// 		}).
-// 		OnSubmit(func(id string, index int, value string) {
-// 			println("Submitted:", value)
-// 		})
-
-// 	// List with custom styles
-// 	colorList := List().
-// 		ID("colors").
-// 		Items([]string{"Red", "Green", "Blue", "Yellow"}).
-// 		Selected(2).
-// 		SelectedStyle(retui.NewStyle().Foreground(retui.Green).Bold(true)).
-// 		UnselectedStyle(retui.NewStyle().Foreground(retui.BrightBlack))
-
-// 	return retui.Box(
-// 		retui.Props{
-// 			Direction: retui.Column,
-// 		},
-// 		retui.NewStyle(),
-// 		fruitList.Render(),
-// 		retui.Text(" ", retui.NewStyle()),
-// 		colorList.Render(),
-// 	)
-// }

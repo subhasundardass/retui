@@ -27,9 +27,22 @@ type SelectConfig struct {
 	OnFocus      func(id string)
 	OnBlur       func(id string)
 	OnOpenChange func(id string, isOpen bool)
-	// OnFilter is optional. When set, it's called with the current search
-	// text (e.g. to query a database) instead of the built-in local
-	// substring match. Called directly, no debounce.
+
+	// OnFilter, when set, is the single source of truth for what options
+	// are shown — including the empty query. This means:
+	//
+	//   - Options can be left empty entirely for a server/DB-backed select.
+	//     Opening the dropdown calls OnFilter(id, "") to load the default
+	//     page, exactly like typing calls it to load filtered results.
+	//   - Static Options is ignored once OnFilter is set (it's never mixed
+	//     with the local substring matcher).
+	//
+	// OnFilter is called exactly once per distinct query — on open, and
+	// once per keystroke that actually changes the search text. It is
+	// never called again just because the user pressed an arrow key, and
+	// it is never called more than once for the same query. It's called
+	// synchronously, no debounce — debounce it yourself if the source is
+	// slow (e.g. wrap it and only call through after a timer).
 	OnFilter func(id string, query string) []SelectOption
 
 	OverlayAbsX int
@@ -90,8 +103,18 @@ func (s *SelectField) OnOpenChange(fn func(string, bool)) *SelectField {
 	return s
 }
 
+// OnFilter registers a data source for the dropdown. Called with the
+// current search text — including "" when the dropdown first opens, so
+// it also doubles as "load default options". See SelectConfig.OnFilter
+// for the full contract.
 func (s *SelectField) OnFilter(fn func(string, string) []SelectOption) *SelectField {
 	s.config.OnFilter = fn
+	return s
+}
+
+func (s *SelectField) OverlayAbsPos(x, y int) *SelectField {
+	s.config.OverlayAbsX = x
+	s.config.OverlayAbsY = y
 	return s
 }
 
@@ -112,11 +135,24 @@ func (s *SelectField) Render() retui.Element {
 // keep exclusive input focus while the dropdown is open, so no other
 // component's focus changes underneath it. It does NOT change how this
 // component itself decides whether it's focused.
+//
+// Search input: there is exactly one owner of the search text — the key
+// switch below. It is rendered as plain text, not a nested focusable
+// widget, specifically so there's never a second component independently
+// reading the same keystroke.
+//
+// filteredOptions is a cached snapshot of "what filterOptions(config,
+// filterText) returned last time filterText changed". It's recomputed
+// (and OnFilter re-invoked) at exactly the points where filterText
+// changes — open, character typed, backspace — and nowhere else. Arrow
+// key navigation, Enter, Escape, Tab all read the cache, so OnFilter is
+// never called more than once per distinct query.
 
 func renderSelect(focused bool, config *SelectConfig) retui.Element {
 	isOpen, setIsOpen := retui.UseState(false)
 	highlighted, setHighlighted := retui.UseState(0)
 	filterText, setFilterText := retui.UseState("")
+	filteredOptions, setFilteredOptions := retui.UseState[[]SelectOption](nil)
 
 	overlayID := config.ID + "__overlay"
 	if config.ID == "" {
@@ -130,16 +166,17 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 		config.OnBlur(config.ID)
 	}
 
-	// openOverlay/closeOverlay mutate the local isOpen/filterText/highlighted
-	// variables directly, IN ADDITION TO calling the state setters. The
-	// setters only take effect on the next render; without the direct
-	// mutation, the rest of THIS render (the defensive re-sync check below,
-	// and buildSelectElement) would keep seeing the pre-close values —
-	// which caused a stale "isOpen=true" to survive into the next render
-	// (the one triggered by shifting focus away), showing a spurious
-	// flash of the dropdown and double-invoking closeOverlay (double
-	// PopFocus/ReleaseCaptureFocus, corrupting focus handoff to the next
-	// field).
+	// openOverlay/closeOverlay mutate the local isOpen/filterText/
+	// highlighted/filteredOptions variables directly, IN ADDITION TO
+	// calling the state setters. The setters only take effect on the
+	// next render; without the direct mutation, the rest of THIS render
+	// (the defensive re-sync check below, and buildSelectElement) would
+	// keep seeing pre-close values — which caused a stale "isOpen=true"
+	// to survive into the next render, showing a spurious flash of the
+	// dropdown and double-invoking closeOverlay (double PopFocus/
+	// ReleaseCaptureFocus, corrupting focus handoff to the next field).
+	canOpen := len(config.Options) > 0 || config.OnFilter != nil
+
 	openOverlay := func(initialFilter string) {
 		options := filterOptions(config, initialFilter)
 		idx, ok := findValueIndex(options, config.Value)
@@ -149,11 +186,14 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 
 		isOpen = true
 		filterText = initialFilter
+		filteredOptions = options
 		highlighted = idx
 		setIsOpen(true)
 		setFilterText(initialFilter)
+		setFilteredOptions(options)
 		setHighlighted(idx)
 
+		retui.OpenOverlay(overlayID)
 		retui.PushFocus(overlayID)
 		retui.CaptureFocus(overlayID)
 
@@ -173,7 +213,9 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 		filterText = ""
 		setIsOpen(false)
 		setFilterText("")
-		retui.ReleaseCaptureFocus()
+
+		retui.CloseOverlay(overlayID)
+		retui.ReleaseFocus()
 		retui.PopFocus()
 
 		if config.OnOpenChange != nil && config.ID != "" {
@@ -181,85 +223,98 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 		}
 	}
 
-	if focused && !config.Disabled {
-		key := retui.CurrentKey
+	if !config.Disabled {
 
-		handled := false
-		if config.OnKeyPress != nil {
-			handled = config.OnKeyPress(config.ID, key)
+		keyID := config.ID
+		active := focused
+
+		// When the dropdown is open, the overlay owns the keyboard.
+		if isOpen {
+			keyID = overlayID
+			active = retui.HasFocusCapture(overlayID)
 		}
 
-		if !handled && key.Code != retui.KeyNone {
-			if !isOpen {
-				switch key.Code {
-				case retui.KeyEnter, retui.KeySpace, retui.KeyDown:
-					if len(config.Options) > 0 {
-						openOverlay("")
-					}
-				default:
-					if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 && len(config.Options) > 0 {
-						// Typing while closed opens the overlay and starts the search.
-						openOverlay(string(key.Rune))
-					}
-				}
-			} else {
-				options := filterOptions(config, filterText)
+		key, ok := retui.UseFocusedKey(keyID, active)
+		if ok {
 
-				if config.OnFilter == nil {
-					options = filterOptions(config, filterText)
-				}
+			handled := false
+			if config.OnKeyPress != nil {
+				handled = config.OnKeyPress(config.ID, key)
+			}
 
-				switch key.Code {
-				case retui.KeyEscape:
-					closeOverlay()
+			if !handled && (key.Code != retui.KeyNone || key.Rune != 0) {
+				if !isOpen {
+					switch key.Code {
+					case retui.KeyEnter, retui.KeySpace, retui.KeyDown:
+						if canOpen {
+							openOverlay("")
+						}
 
-				case retui.KeyEnter, retui.KeySpace:
-					if highlighted >= 0 && highlighted < len(options) {
-						opt := options[highlighted]
-						if !opt.Disabled {
-							config.Value = opt.Value
-							if config.OnChange != nil && config.ID != "" {
-								config.OnChange(config.ID, opt.Value)
-							}
+					default:
+						if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 && canOpen {
+							// Typing while closed opens the dropdown
+							// and starts filtering immediately.
+							openOverlay(string(key.Rune))
 						}
 					}
-					closeOverlay()
+				} else {
+					switch key.Code {
 
-				case retui.KeyUp:
-					highlighted = nextEnabledIndex(options, highlighted, -1)
-					setHighlighted(highlighted)
+					case retui.KeyEscape:
+						closeOverlay()
 
-				case retui.KeyDown:
-					highlighted = nextEnabledIndex(options, highlighted, 1)
-					setHighlighted(highlighted)
+					case retui.KeyEnter:
+						if highlighted >= 0 && highlighted < len(filteredOptions) {
+							opt := filteredOptions[highlighted]
+							if !opt.Disabled {
+								config.Value = opt.Value
+								if config.OnChange != nil && config.ID != "" {
+									config.OnChange(config.ID, opt.Value)
+								}
+							}
+						}
+						closeOverlay()
 
-				case retui.KeyHome:
-					highlighted = firstEnabledIndex(options)
-					setHighlighted(highlighted)
-
-				case retui.KeyEnd:
-					highlighted = lastEnabledIndex(options)
-					setHighlighted(highlighted)
-
-				case retui.KeyBackspace:
-					if len(filterText) > 0 {
-						filterText = filterText[:len(filterText)-1]
-						highlighted = firstEnabledIndex(filterOptions(config, filterText))
-						setFilterText(filterText)
+					case retui.KeyUp:
+						highlighted = nextEnabledIndex(filteredOptions, highlighted, -1)
 						setHighlighted(highlighted)
-					}
 
-				case retui.KeyTab:
-					closeOverlay()
-
-				default:
-					// KeySpace falls through to here now, same as any other printable
-					// rune — it edits filterText instead of confirming a selection.
-					if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 {
-						filterText = filterText + string(key.Rune)
-						highlighted = firstEnabledIndex(filterOptions(config, filterText))
-						setFilterText(filterText)
+					case retui.KeyDown:
+						highlighted = nextEnabledIndex(filteredOptions, highlighted, 1)
 						setHighlighted(highlighted)
+
+					case retui.KeyHome:
+						highlighted = firstEnabledIndex(filteredOptions)
+						setHighlighted(highlighted)
+
+					case retui.KeyEnd:
+						highlighted = lastEnabledIndex(filteredOptions)
+						setHighlighted(highlighted)
+
+					case retui.KeyBackspace:
+						if len(filterText) > 0 {
+							filterText = filterText[:len(filterText)-1]
+							filteredOptions = filterOptions(config, filterText)
+							highlighted = firstEnabledIndex(filteredOptions)
+
+							setFilterText(filterText)
+							setFilteredOptions(filteredOptions)
+							setHighlighted(highlighted)
+						}
+
+					case retui.KeyTab:
+						closeOverlay()
+
+					default:
+						if key.Rune != 0 && key.Rune >= 32 && key.Rune <= 126 {
+							filterText += string(key.Rune)
+							filteredOptions = filterOptions(config, filterText)
+							highlighted = firstEnabledIndex(filteredOptions)
+
+							setFilterText(filterText)
+							setFilteredOptions(filteredOptions)
+							setHighlighted(highlighted)
+						}
 					}
 				}
 			}
@@ -274,57 +329,47 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 		closeOverlay()
 	}
 
-	return buildSelectElement(
-		config,
-		focused,
-		isOpen,
-		filterText,
-		highlighted,
-		setFilterText,
-		setHighlighted,
-	)
+	return buildSelectElement(config, focused, isOpen, filterText, filteredOptions, highlighted)
 }
 
 // ─── Render Helpers ────────────────────────────────────────────────────────
-
-// OverlayAbsPos sets the absolute screen position of this select's own
-// input box, as tracked by the caller's layout (e.g. table row/column
-// geometry). This is required for the dropdown overlay to render in the
-// right place on screen.
-func (s *SelectField) OverlayAbsPos(x, y int) *SelectField {
-	s.config.OverlayAbsX = x
-	s.config.OverlayAbsY = y
-	return s
-}
 
 func buildSelectElement(
 	config *SelectConfig,
 	focused bool,
 	isOpen bool,
 	filterText string,
+	options []SelectOption,
 	highlighted int,
-	setFilterText func(string),
-	setHighlighted func(int),
 ) retui.Element {
-
-	options := filterOptions(config, filterText)
 
 	if highlighted >= len(options) {
 		highlighted = len(options) - 1
 	}
-
 	if highlighted < 0 {
 		highlighted = 0
 	}
 
+	// Resolve the label for the currently-selected value. Check the
+	// static Options first, then fall back to whatever's currently
+	// loaded (covers the fully server-backed case, where the selected
+	// value's label may only exist in a previously-fetched page).
 	selectedLabel := config.Placeholder
 	target := strings.TrimSpace(config.Value)
-
-	for _, opt := range config.Options {
-		if strings.TrimSpace(opt.Value) == target {
-
-			selectedLabel = opt.Label
-			break
+	if target != "" {
+		for _, opt := range config.Options {
+			if strings.TrimSpace(opt.Value) == target {
+				selectedLabel = opt.Label
+				break
+			}
+		}
+		if selectedLabel == config.Placeholder {
+			for _, opt := range options {
+				if strings.TrimSpace(opt.Value) == target {
+					selectedLabel = opt.Label
+					break
+				}
+			}
 		}
 	}
 
@@ -349,9 +394,13 @@ func buildSelectElement(
 
 	textStyle := config.Style
 	if inputHighlighted {
-		textStyle = textStyle.Foreground(retui.BrightWhite).Background(retui.Blue).Bold(true)
+		textStyle = textStyle.
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
+			Bold(true)
 	} else {
-		textStyle = textStyle.Foreground(retui.BrightBlack).Background(retui.Hex("#0c0c0c")).Bold(true)
+		textStyle = textStyle.
+			Foreground(retui.White).Bold(true)
 	}
 
 	arrowStyle := retui.NewStyle().Foreground(retui.BrightBlack).Bold(true)
@@ -393,65 +442,29 @@ func buildSelectElement(
 		return retui.Box(retui.Props{Direction: retui.Column}, retui.NewStyle(), inputRow)
 	}
 
-	// In buildSelectElement function, replace the searchInput section with:
-
 	searchInput := retui.Box(
-		retui.Props{
-			Padding: [4]int{0, 1, 0, 1},
-		},
+		retui.Props{Padding: [4]int{0, 1, 0, 1}},
 		retui.NewStyle().Border(retui.Border{Bottom: true, Color: retui.Cyan}),
 		retui.Box(
 			retui.Props{Direction: retui.Row, Gap: 1},
 			retui.NewStyle(),
 			retui.Text("Search:", retui.NewStyle().Foreground(retui.BrightBlack).Bold(true)),
-			TextInput().
-				ID(config.ID+"__search").
-				Width(config.Width-8).
-				Value(filterText).
-				Focused(true).
-				Placeholder("Type to filter...").
-				Style(retui.NewStyle().
-					Foreground(retui.White).
-					Background(retui.Hex("#1a1a1a")),
-				).
-				OnChange(func(id, value string) {
-
-					setFilterText(value)
-
-					if config.OnFilter != nil {
-						config.Options = config.OnFilter(config.ID, value)
-					} else {
-						config.Options = filterOptions(config, value)
-					}
-
-					setHighlighted(firstEnabledIndex(config.Options))
-
-				}).
-				Render(),
+			retui.Text(
+				padSearchText(filterText, config.Width-8),
+				retui.NewStyle().Foreground(retui.White).Background(retui.Hex("#1a1a1a")),
+			),
 		),
 	)
 
-	optionList := buildOptionsList(
-		config,
-		options,
-		highlighted,
-	)
-
-	// dropdownBox := buildOptionsList(config, options, highlighted)
+	optionList := buildOptionsList(config, options, highlighted)
 
 	dropdownBox := retui.Box(
-
-		retui.Props{
-			Direction: retui.Column, Gap: 0,
-		},
-
+		retui.Props{Direction: retui.Column, Gap: 0},
 		retui.NewStyle().Background(retui.Black).Border(retui.Border{
 			Top: true, Right: true, Bottom: true, Left: true,
 			Chars: retui.BorderRounded, Color: retui.Cyan,
 		}),
-
 		searchInput,
-
 		optionList,
 	)
 
@@ -472,7 +485,6 @@ func buildSelectElement(
 
 func buildOptionsList(config *SelectConfig, options []SelectOption, highlighted int) retui.Element {
 	if len(options) == 0 {
-
 		return retui.Box(
 			retui.Props{
 				Direction: retui.Column,
@@ -575,16 +587,28 @@ func nextEnabledIndex(options []SelectOption, current int, direction int) int {
 	return current
 }
 
+// filterOptions returns the option list for a given query.
+//
+// If OnFilter is set, it's the single source of truth for every query —
+// including "" — so a select can be entirely server-backed with no
+// static Options: opening it calls OnFilter(id, "") to load the default
+// page, and further calls happen as the user types.
+//
+// If OnFilter is nil, Options is used as-is for an empty query, and a
+// case-insensitive local substring match over Options is used otherwise.
+//
+// Callers must only invoke this when the query actually changes (open,
+// character typed, backspace) — never on navigation or on every render —
+// so a database-backed OnFilter isn't hit repeatedly for the same query.
 func filterOptions(config *SelectConfig, query string) []SelectOption {
+	if config.OnFilter != nil {
+		return config.OnFilter(config.ID, query)
+	}
 	if query == "" {
 		return config.Options
 	}
-	if config.OnFilter != nil {
-		return config.OnFilter(config.ID, query) // ← DB search
-	}
-	// falls through to this instead:
 	var out []SelectOption
-	for _, opt := range config.Options { // ← only the 10 already loaded!
+	for _, opt := range config.Options {
 		if strings.Contains(strings.ToLower(opt.Label), strings.ToLower(query)) {
 			out = append(out, opt)
 		}
@@ -601,4 +625,21 @@ func truncateText(text string, maxWidth int) string {
 		return strings.Repeat(".", maxWidth)
 	}
 	return string(runes[:maxWidth-3]) + "..."
+}
+
+// padSearchText renders the search box's text with a trailing caret,
+// truncated/padded to width. There is no separate cursor state — the
+// caret always sits at the end because filterText is only ever appended
+// to or trimmed from the end.
+func padSearchText(text string, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	display := text + "▏"
+	truncated := truncateText(display, width)
+	runeLen := len([]rune(truncated))
+	if runeLen < width {
+		truncated += strings.Repeat(" ", width-runeLen)
+	}
+	return truncated
 }

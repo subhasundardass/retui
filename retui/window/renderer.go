@@ -15,8 +15,8 @@ func NewOverlayRenderer() *OverlayRenderer {
 
 // Default colors used when a window hasn't set a custom title bar / body color.
 var (
-	defaultTitleBarBgColor = retui.Blue
-	defaultBodyBgColor     = retui.Color{Type: retui.ColorRGB, R: 40, G: 40, B: 40}
+	defaultTitleBarBgColor = retui.Navy
+	defaultBodyBgColor     = retui.Gray(1)
 )
 
 // Render returns a full-screen element with windows properly overlaid on main content.
@@ -77,7 +77,7 @@ func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 	}
 
 	body := retui.Box(
-		retui.Props{Padding: [4]int{1, 1, 1, 1}},
+		retui.Props{},
 		retui.NewStyle().Background(bodyBg),
 		content,
 	)

@@ -1,14 +1,5 @@
 package retui
 
-const (
-	ElementBox ElementType = iota
-	ElementText
-	ElementMultilineText
-	ElementMarkdown
-	ElementComponent
-	ElementOverlay // floating absolute-position container — see Overlay()
-)
-
 // Box creates a container element that arranges its children using a
 // flexbox-style layout.
 //
@@ -56,8 +47,14 @@ func Box(props Props, style Style, children ...Element) Element {
 			PaddingRight:  props.Padding[1],
 			PaddingBottom: props.Padding[2],
 			PaddingLeft:   props.Padding[3],
-			Align:         props.Align,
-			Justify:       props.Justify,
+
+			MarginTop:    props.Margin[0],
+			MarginRight:  props.Margin[1],
+			MarginBottom: props.Margin[2],
+			MarginLeft:   props.Margin[3],
+
+			Align:   props.Align,
+			Justify: props.Justify,
 		},
 		Style:    style,
 		Children: children,
