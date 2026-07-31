@@ -28,7 +28,16 @@ type CheckboxField struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
-
+//
+//			func ExampleCheckboxUsage() retui.Element {
+//				agreeCheckbox := Checkbox().
+//					ID("agree").
+//		            Checked(c.state.IsActive).
+//					Label("I agree to the terms").
+//					OnChange(func(id string, checked bool) {
+//						println("Checkbox", id, "changed to:", checked)
+//					}).
+//	             Render(),
 func Checkbox() *CheckboxField {
 	return &CheckboxField{
 		config: CheckboxConfig{
@@ -175,11 +184,11 @@ render:
 	var boxStyle retui.Style
 	if checked {
 		boxStyle = boxStyle.
-			Foreground(retui.Green).
+			Foreground(retui.White).
 			Bold(true)
 	} else {
 		boxStyle = boxStyle.
-			Foreground(retui.BrightBlack)
+			Foreground(retui.White)
 	}
 
 	// Override with focus style
@@ -207,14 +216,3 @@ render:
 	// Return as a text element
 	return retui.Text(display, boxStyle)
 }
-
-// ─── Example Usage ──────────────────────────────────────────────────────
-
-// func ExampleCheckboxUsage() retui.Element {
-// 	// Single checkbox
-// 	agreeCheckbox := Checkbox().
-// 		ID("agree").
-// 		Label("I agree to the terms").
-// 		OnChange(func(id string, checked bool) {
-// 			println("Checkbox", id, "changed to:", checked)
-// 		})

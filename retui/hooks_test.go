@@ -4,13 +4,6 @@ import (
 	"testing"
 )
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-// emptyElement returns an empty Element for testing
-func emptyElement() Element {
-	return Element{}
-}
-
 // ─── TestUseState ────────────────────────────────────────────────────────────
 
 func TestUseState(t *testing.T) {
@@ -168,8 +161,17 @@ func TestUseEffect(t *testing.T) {
 func TestCreateContext(t *testing.T) {
 	ctx := CreateContext("default")
 	if ctx == nil {
-		t.Error("CreateContext returned nil")
+		t.Fatal("CreateContext returned nil")
 	}
+	// Now safe to access defaultValue
+	if ctx.defaultValue != "default" {
+		t.Errorf("expected defaultValue 'default', got %q", ctx.defaultValue)
+	}
+	// Now safe to access defaultValue
+	if ctx.defaultValue != "default" {
+		t.Errorf("expected defaultValue 'default', got %q", ctx.defaultValue)
+	}
+
 	if ctx.defaultValue != "default" {
 		t.Errorf("Expected defaultValue 'default', got %v", ctx.defaultValue)
 	}
@@ -177,6 +179,23 @@ func TestCreateContext(t *testing.T) {
 
 func TestContextProvideAndUse(t *testing.T) {
 	ctx := CreateContext("default")
+	if ctx == nil {
+		t.Fatal("CreateContext returned nil")
+	}
+	// Now safe to access defaultValue
+	if ctx.defaultValue != "default" {
+		t.Errorf("expected defaultValue 'default', got %q", ctx.defaultValue)
+	}
+	// Now safe to access defaultValue
+	if ctx.defaultValue != "default" {
+		t.Errorf("expected defaultValue 'default', got %q", ctx.defaultValue)
+	}
+	if ctx == nil {
+		t.Fatal("CreateContext returned nil")
+	}
+	if ctx.defaultValue != "default" {
+		t.Errorf("expected defaultValue 'default', got %q", ctx.defaultValue)
+	}
 
 	// Test without Provide
 	value := UseContext(ctx)

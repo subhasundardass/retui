@@ -13,11 +13,12 @@ func TestNewWindow(t *testing.T) {
 	win := NewWindow().SetContent(content)
 
 	if win == nil {
-		t.Error("NewWindow returned nil")
+		t.Fatal("NewWindow returned nil")
 	}
 
+	// Now safe to access all fields
 	if win.Title != "Window" {
-		t.Errorf("Expected default title 'Window', got '%s'", win.Title)
+		t.Errorf("expected title 'Window', got %q", win.Title)
 	}
 
 	if win.Width != 40 {
@@ -44,6 +45,10 @@ func TestWindowSetTitle(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetTitle("My Test Window")
 	if win.Title != "My Test Window" {
 		t.Errorf("Expected title 'My Test Window', got '%s'", win.Title)
@@ -66,6 +71,10 @@ func TestWindowSetSize(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetSize(60, 25)
 	if win.Width != 60 {
 		t.Errorf("Expected width 60, got %d", win.Width)
@@ -82,6 +91,10 @@ func TestWindowSetPosition(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetPosition(10, 20)
 	if win.X != 10 {
 		t.Errorf("Expected X 10, got %d", win.X)
@@ -97,6 +110,10 @@ func TestWindowSetModal(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	if win.Modal {
 		t.Error("New window should not be modal by default")
@@ -120,6 +137,10 @@ func TestWindowShow(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	if win.IsVisible() {
 		t.Error("Window should be hidden before Show()")
 	}
@@ -142,6 +163,11 @@ func TestWindowHide(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.Show()
 
 	if !win.IsVisible() {
@@ -166,6 +192,11 @@ func TestWindowClose(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.Show()
 
 	if !win.IsVisible() {
@@ -193,6 +224,10 @@ func TestWindowFocus(t *testing.T) {
 
 	win1 := NewWindow().SetContent(content1)
 	win2 := NewWindow().SetContent(content2)
+
+	if win1 == nil || win2 == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	win1.Show()
 	win2.Show()
@@ -223,6 +258,10 @@ func TestWindowCenter(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	win.SetSize(40, 15)
 	win.Center()
@@ -257,6 +296,10 @@ func TestWindowCenterOnScreen(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetSize(40, 15)
 	win.Center()
 
@@ -290,6 +333,10 @@ func TestWindowGetBounds(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetPosition(10, 20)
 	win.SetSize(50, 25)
 
@@ -308,6 +355,10 @@ func TestWindowRender(t *testing.T) {
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
 
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	rendered := win.Render()
 
 	// Use reflect.DeepEqual to compare structs with slices
@@ -322,6 +373,10 @@ func TestWindowManagerAddWindow(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	mgr := GetManager()
 	mgr.AddWindow(win)
@@ -343,6 +398,11 @@ func TestWindowManagerRemoveWindow(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.Show()
 
 	if Count() != 1 {
@@ -371,6 +431,10 @@ func TestWindowManagerBringToFront(t *testing.T) {
 	win1 := NewWindow().SetContent(content1)
 	win2 := NewWindow().SetContent(content2)
 	win3 := NewWindow().SetContent(content3)
+
+	if win1 == nil || win2 == nil || win3 == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	win1.Show()
 	win2.Show()
@@ -403,6 +467,10 @@ func TestWindowManagerGetFocused(t *testing.T) {
 	win1 := NewWindow().SetContent(content1)
 	win2 := NewWindow().SetContent(content2)
 
+	if win1 == nil || win2 == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win1.Show()
 	win2.Show()
 
@@ -428,6 +496,11 @@ func TestWindowManagerIsAnyModalOpen(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetModal(true)
 	win.Show()
 
@@ -459,6 +532,10 @@ func TestWindowManagerGetTopVisibleModal(t *testing.T) {
 	win2.SetModal(true)
 	win2.Show()
 
+	if win1 == nil || win2 == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	mgr := GetManager()
 	topModal := mgr.GetTopVisibleModal()
 
@@ -478,20 +555,26 @@ func TestWindowManagerCount(t *testing.T) {
 	}
 
 	win1 := NewWindow().SetContent(content)
-	win1.Show()
+	if win1 != nil {
+		win1.Show()
+	}
 
 	if Count() != 1 {
 		t.Errorf("Expected 1 window, got %d", Count())
 	}
 
 	win2 := NewWindow().SetContent(content)
-	win2.Show()
+	if win2 != nil {
+		win2.Show()
+	}
 
 	if Count() != 2 {
 		t.Errorf("Expected 2 windows, got %d", Count())
 	}
 
-	win1.Close()
+	if win1 != nil {
+		win1.Close()
+	}
 
 	if Count() != 1 {
 		t.Errorf("Expected 1 window after close, got %d", Count())
@@ -508,9 +591,15 @@ func TestCloseAll(t *testing.T) {
 	win2 := NewWindow().SetContent(content)
 	win3 := NewWindow().SetContent(content)
 
-	win1.Show()
-	win2.Show()
-	win3.Show()
+	if win1 != nil {
+		win1.Show()
+	}
+	if win2 != nil {
+		win2.Show()
+	}
+	if win3 != nil {
+		win3.Show()
+	}
 
 	if Count() != 3 {
 		t.Errorf("Expected 3 windows, got %d", Count())
@@ -532,6 +621,11 @@ func TestWindowString(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetTitle("Test Window")
 	win.SetSize(50, 20)
 	win.SetPosition(10, 5)
@@ -553,6 +647,11 @@ func TestWindowClone(t *testing.T) {
 
 	content := retui.Text("Test Content", retui.NewStyle())
 	win := NewWindow().SetContent(content)
+
+	if win == nil {
+		t.Fatal("NewWindow returned nil")
+	}
+
 	win.SetTitle("Original Window")
 	win.SetSize(50, 20)
 	win.SetPosition(10, 5)
@@ -593,6 +692,10 @@ func TestModalFocusBlocking(t *testing.T) {
 	win1 := NewWindow().SetContent(content1)
 	win2 := NewWindow().SetContent(content2)
 	modal := NewWindow().SetContent(content3)
+
+	if win1 == nil || win2 == nil || modal == nil {
+		t.Fatal("NewWindow returned nil")
+	}
 
 	win1.Show()
 	win2.Show()

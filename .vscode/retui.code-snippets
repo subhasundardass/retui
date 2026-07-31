@@ -1,0 +1,186 @@
+{
+    "RetUI Component": {
+        "scope": "go",
+        "prefix": "rcomp",
+        "description": "Create a RetUI component",
+        "body": [
+            "func ${1:Component}(props retui.Props) retui.Element {",
+            "\treturn retui.Box(",
+            "\t\tretui.Text(\"${2:Hello RetUI}\"),",
+            "\t)",
+            "}"
+        ]
+    },
+
+    "RetUI Screen": {
+        "scope": "go",
+        "prefix": "rscreen",
+        "description": "Create a RetUI screen",
+        "body": [
+            "package ${1:screen}",
+            "",
+            "import (",
+            "\t\"github.com/subhasundardass/retui/retui\"",
+            ")",
+            "",
+            "func ${2:Screen}(props retui.Props) retui.Element {",
+            "\treturn retui.Box(",
+            "\t\tretui.Text(\"${3:Screen}\"),",
+            "\t)",
+            "}"
+        ]
+    },
+
+    "RetUI Box": {
+        "scope": "go",
+        "prefix": "rbox",
+        "description": "RetUI Box",
+        "body": [
+            "retui.Box(",
+            "\tretui.Props{",
+            "\t\tGap: 1,",
+            "\t},",
+            "\tretui.NewStyle(),",
+            "\t$0",
+            ")"
+        ]
+    },
+
+    "RetUI Text": {
+        "scope": "go",
+        "prefix": "rtext",
+        "description": "RetUI Text",
+        "body": [
+            "retui.Text(\"${1:Text,}\")"
+        ]
+    },
+
+    "RetUI Panel": {
+        "scope": "go",
+        "prefix": "rpanel",
+        "description": "RetUI Panel",
+        "body": [
+            "components.Panel(",
+            "\tretui.Props{},",
+            "\t\"${1:Title}\",",
+            "\t$0,",
+            ")"
+        ]
+    },
+
+    "RetUI Button": {
+        "scope": "go",
+        "prefix": "rbutton",
+        "description": "RetUI Button",
+        "body": [
+            "components.Button(",
+            "\tretui.Props{},",
+            "\t\"${1:Button}\",",
+            "\tfunc() {",
+            "\t\t$0",
+            "\t},",
+            ")"
+        ]
+    },
+
+    "RetUI Input": {
+        "scope": "go",
+        "prefix": "rinput",
+        "description": "RetUI Input",
+        "body": [
+            "components.Input(",
+            "\tretui.Props{},",
+            "\t&${1:value},",
+            "\tfunc(v string) {",
+            "\t\t${1:value} = v",
+            "\t},",
+            ")"
+        ]
+    },
+
+    "RetUI UseState": {
+        "scope": "go",
+        "prefix": "rstate",
+        "description": "UseState",
+        "body": [
+            "${1:value}, set${2:Value} := retui.UseState(${3:\"\"})"
+        ]
+    },
+
+    "RetUI UseEffect": {
+        "scope": "go",
+        "prefix": "reffect",
+        "description": "UseEffect",
+        "body": [
+            "retui.UseEffect(func() {",
+            "\t$0",
+            "})"
+        ]
+    },
+
+    "RetUI UseMemo": {
+        "scope": "go",
+        "prefix": "rmemo",
+        "description": "UseMemo",
+        "body": [
+            "${1:value} := retui.UseMemo(func() any {",
+            "\treturn ${2:nil}",
+            "})"
+        ]
+    },
+
+    "RetUI Push Screen": {
+        "scope": "go",
+        "prefix": "rpush",
+        "description": "Push Screen",
+        "body": [
+            "retui.PushScreen(\"${1:screen_id}\", nil)"
+        ]
+    },
+
+    "RetUI Replace Screen": {
+        "scope": "go",
+        "prefix": "rreplace",
+        "description": "Replace Screen",
+        "body": [
+            "retui.ReplaceScreen(\"${1:screen_id}\", nil)"
+        ]
+    },
+
+    "RetUI Back": {
+        "scope": "go",
+        "prefix": "rback",
+        "description": "Back",
+        "body": [
+            "retui.Back()"
+        ]
+    },
+
+    "RetUI Row": {
+        "scope": "go",
+        "prefix": "rrow",
+        "description": "Horizontal Box",
+        "body": [
+            "retui.Box(",
+            "\tretui.Props{",
+            "\t\tDirection: retui.Row,",
+            "\t},",
+            "\t$0,",
+            ")"
+        ]
+    },
+
+    "RetUI Column": {
+        "scope": "go",
+        "prefix": "rcol",
+        "description": "Vertical Box",
+        "body": [
+            "retui.Box(",
+            "\tretui.Props{",
+            "\t\tDirection: retui.Column,",
+            "\t},",
+            "\t$0,",
+            ")"
+        ]
+    }
+}

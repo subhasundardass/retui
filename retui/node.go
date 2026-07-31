@@ -261,6 +261,8 @@ type Props struct {
 	Gap int
 	// Padding reserves space inside the element [top, right, bottom, left].
 	Padding [4]int
+	// Margin reserves space outside the element [top, right, bottom, left].
+	Margin [4]int
 	// Align controls child alignment on the cross axis.
 	Align Alignment
 	// Justify controls space distribution along the main axis.
@@ -521,6 +523,17 @@ type LayoutProps struct {
 	PaddingBottom int
 	// PaddingLeft is interior spacing at left.
 	PaddingLeft int
+
+	// MarginTop is exterior spacing at top — space between this element and
+	// whatever is above it, outside its border box.
+	MarginTop int
+	// MarginRight is exterior spacing at right.
+	MarginRight int
+	// MarginBottom is exterior spacing at bottom.
+	MarginBottom int
+	// MarginLeft is exterior spacing at left.
+	MarginLeft int
+
 	// Gap is minimum spacing between adjacent children on main axis.
 	Gap int
 	// Align controls child alignment on cross axis.
