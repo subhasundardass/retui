@@ -10,13 +10,16 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ### Added
 
-- Add Border Title with Style
-- Added Toast component
-- Added UseRef, UseMemo, UseReducer Hooks in State
+- Border title with custom style support
+- Toast component
+- New state hooks:
+  - UseRef
+  - UseMemo
+  - UseReducer
 
-### Updates
+### Changed
 
-- Update Responsive UI
+- Improved responsive UI behavior and layout handling
 
 ---
 
