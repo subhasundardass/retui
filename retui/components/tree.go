@@ -25,7 +25,7 @@ func Tree(
 	onChange func(id string),
 ) retui.Element {
 
-	focusedIdx, setFocusedIdx := retui.UseState(0)
+	focusedIdx, setFocusedIdx := retui.UseStateKeyed(treeID+":focusedIdx", 0)
 	expanded, setExpanded := retui.UseStateKeyed(treeID+":expanded", map[string]bool{})
 
 	// Build visible tree
