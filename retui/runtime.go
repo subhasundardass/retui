@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+var CurrentScreenWidth int
+var CurrentScreenHeight int
+
 // ============================================================================
 // App — Terminal Application Runtime
 // ============================================================================
@@ -387,6 +390,10 @@ func (a *App) Run(fn func(props Props) Element, props Props) {
 //	fn:    Render function; builds element tree given props
 //	props: Props passed to fn; typically includes app state
 func (a *App) Render(fn func(props Props) Element, props Props) {
+
+	CurrentScreenWidth = a.screen.Width()
+	CurrentScreenHeight = a.screen.Height()
+
 	modalOpen := IsAnyModalOpenFn != nil && IsAnyModalOpenFn()
 	realKey := CurrentKey
 
