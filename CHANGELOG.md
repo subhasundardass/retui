@@ -6,6 +6,20 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.7.0] - 2026-08-03
+
+### Added
+
+- Add Border Title with Style
+- Added Toast component
+- Added UseRef, UseMemo, UseReducer Hooks in State
+
+### Updates
+
+- Update Responsive UI
+
+---
+
 ## [v0.6.0] - 2026-07-31
 
 ### Added
@@ -113,17 +127,6 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 - Minor rendering issues.
 - Focus handling edge cases.
-
----
-
-## Version History
-
-| Version | Release Date | Description                    |
-| ------- | ------------ | ------------------------------ |
-| v0.4.0  | 2026-07-18   | Added Table, Select Picker     |
-| v0.3.0  | 2026-07-14   | Added Badge, Spinner, Progress |
-| v0.2.0  | 2026-07-13   | Added new features, Bug Fixed  |
-| v0.1.0  | 2026-07-11   | Initial public release         |
 
 ---
 

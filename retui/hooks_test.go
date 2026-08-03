@@ -1,6 +1,7 @@
 package retui
 
 import (
+	"sync"
 	"testing"
 )
 
@@ -301,6 +302,204 @@ func TestResetComponentState(t *testing.T) {
 	if EffectCursor != 0 {
 		t.Errorf("Expected EffectCursor 0, got %d", EffectCursor)
 	}
+}
+
+// =======================================================================
+// UseMemo — type-safety across slot reuse (e.g. screen switches)
+// =======================================================================
+
+// TestUseMemo_PanicsOnTypeMismatchWithoutGuard simulates the exact
+// failure case: BeginRender() resets MemosCursor to 0 but never clears
+// the underlying memos slice, so slot 0 can be reused across screens
+// with a different result type. Before the fix, this panics on the
+// unchecked entry.result.(T) assertion.
+func TestUseMemo_SurvivesTypeChangeAcrossScreens(t *testing.T) {
+	defer ResetComponentState()
+	ResetComponentState()
+
+	// "Screen A": memoizes a []int at slot 0.
+	BeginRender()
+	got := UseMemo(func() []int { return []int{1, 2, 3} }, []any{})
+	if len(got) != 3 {
+		t.Fatalf("screen A: got %v, want len 3", got)
+	}
+	RunEffects()
+
+	// "Screen B": same slot 0, same (empty) deps, but a completely
+	// different result type. Must recompute instead of panicking on
+	// the stale []int stored in memos[0].
+	BeginRender()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("UseMemo panicked on type mismatch across slot reuse: %v", r)
+		}
+	}()
+	gotStr := UseMemo(func() string { return "hello" }, []any{})
+	if gotStr != "hello" {
+		t.Errorf("screen B: got %q, want %q", gotStr, "hello")
+	}
+}
+
+func TestUseMemo_RecomputesWhenDepsChange(t *testing.T) {
+	defer ResetComponentState()
+	ResetComponentState()
+
+	calls := 0
+	compute := func() int {
+		calls++
+		return calls
+	}
+
+	BeginRender()
+	first := UseMemo(compute, []any{1})
+	RunEffects()
+
+	BeginRender()
+	second := UseMemo(compute, []any{1}) // same deps — should NOT recompute
+	RunEffects()
+
+	if first != second {
+		t.Errorf("expected memoized value to be stable across renders with same deps: first=%d second=%d", first, second)
+	}
+	if calls != 1 {
+		t.Errorf("expected compute() called once, got %d calls", calls)
+	}
+
+	BeginRender()
+	third := UseMemo(compute, []any{2}) // different deps — should recompute
+	RunEffects()
+
+	if third == second {
+		t.Error("expected recompute when deps changed, got same value")
+	}
+	if calls != 2 {
+		t.Errorf("expected compute() called twice total, got %d calls", calls)
+	}
+}
+
+// =======================================================================
+// UseReducer — correctness after the DeepEqual-scan removal
+// =======================================================================
+
+type counterState struct {
+	Count int
+}
+
+type counterAction struct {
+	Delta int
+}
+
+func counterReducer(s counterState, a counterAction) counterState {
+	return counterState{Count: s.Count + a.Delta}
+}
+
+func TestUseReducer_DispatchUpdatesState(t *testing.T) {
+	defer ResetComponentState()
+	ResetComponentState()
+
+	BeginRender()
+	state, dispatch := UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+
+	if state.Count != 0 {
+		t.Fatalf("initial Count = %d, want 0", state.Count)
+	}
+
+	dispatch(counterAction{Delta: 5})
+
+	// Re-render to observe the committed state at the same slot.
+	BeginRender()
+	state2, _ := UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+
+	if state2.Count != 5 {
+		t.Errorf("after dispatch, Count = %d, want 5", state2.Count)
+	}
+}
+
+// TestUseReducer_DoesNotCollideWithEqualValueElsewhere reproduces the
+// wrong-slot risk from the old DeepEqual-scan implementation: two
+// independent reducers of the same type, both currently holding an
+// equal value, must never let a dispatch on one mutate the other.
+func TestUseReducer_DoesNotCollideWithEqualValueElsewhere(t *testing.T) {
+	defer ResetComponentState()
+	ResetComponentState()
+
+	BeginRender()
+	_, dispatchA := UseReducer(counterReducer, counterState{Count: 0}) // slot 0
+	_, dispatchB := UseReducer(counterReducer, counterState{Count: 0}) // slot 1 — equal value, same type
+	RunEffects()
+
+	dispatchA(counterAction{Delta: 1})
+
+	BeginRender()
+	stateA, dispatchA2 := UseReducer(counterReducer, counterState{Count: 0}) // slot 0
+	stateB, _ := UseReducer(counterReducer, counterState{Count: 0})          // slot 1
+	RunEffects()
+	_ = dispatchA2
+
+	if stateA.Count != 1 {
+		t.Errorf("slot 0 (dispatched) Count = %d, want 1", stateA.Count)
+	}
+	if stateB.Count != 0 {
+		t.Errorf("slot 1 (untouched) Count = %d, want 0 — dispatch on slot 0 leaked into slot 1", stateB.Count)
+	}
+
+	_ = dispatchB
+}
+
+func TestUseReducer_MultipleDispatchesBeforeRerenderAllApply(t *testing.T) {
+	defer ResetComponentState()
+	ResetComponentState()
+
+	BeginRender()
+	_, dispatch := UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+
+	// Fire several dispatches back to back, before any re-render observes
+	// the intermediate state — each must build on the previous, not on
+	// the stale value captured at initial render.
+	dispatch(counterAction{Delta: 1})
+	dispatch(counterAction{Delta: 1})
+	dispatch(counterAction{Delta: 1})
+
+	BeginRender()
+	final, _ := UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+
+	if final.Count != 3 {
+		t.Errorf("Count after 3 sequential dispatches = %d, want 3", final.Count)
+	}
+}
+
+func TestUseReducer_ConcurrentDispatchIsRaceFree(t *testing.T) {
+	// This test only asserts no data race / no panic under `go test -race`;
+	// it does NOT assert every dispatched delta is preserved. As noted in
+	// review, concurrent dispatch on the same reducer slot can lose updates
+	// (last-write-wins) since read-modify-write isn't atomic across the
+	// two lock sections. If that guarantee is later required, UseReducer
+	// needs a per-slot mutex or action queue.
+	defer ResetComponentState()
+	ResetComponentState()
+
+	BeginRender()
+	_, dispatch := UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dispatch(counterAction{Delta: 1})
+		}()
+	}
+	wg.Wait()
+
+	BeginRender()
+	_, _ = UseReducer(counterReducer, counterState{Count: 0})
+	RunEffects()
+	// No assertion on final Count — see comment above.
 }
 
 // ─── Benchmarks ──────────────────────────────────────────────────────────────
