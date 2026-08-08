@@ -43,6 +43,9 @@ type NumberInputConfig struct {
 	Min         float64
 	HasMax      bool
 	Max         float64
+	Disabled    bool
+	ReadOnly    bool
+	Hidden      bool
 	Step        float64 // Increment/decrement step (default: 1)
 	Decimals    int     // Number of decimal places allowed (0 = integer only)
 	ArrowStep   bool    // If false, Up/Down do not change the value (default: true).
@@ -86,6 +89,9 @@ func NumberInput() *NumberInputField {
 			HasMin:           false,
 			Min:              0,
 			HasMax:           false,
+			Disabled:         false,
+			ReadOnly:         false,
+			Hidden:           false,
 			Max:              0,
 			Step:             1,
 			Decimals:         0,
@@ -145,6 +151,22 @@ func (n *NumberInputField) Style(s retui.Style) *NumberInputField {
 	n.config.Style = s
 	return n
 }
+
+// --
+func (i *NumberInputField) Disable(v bool) *NumberInputField {
+	i.config.Disabled = v
+	return i
+}
+func (i *NumberInputField) ReadOnly(v bool) *NumberInputField {
+	i.config.ReadOnly = v
+	return i
+}
+func (i *NumberInputField) Hidden(v bool) *NumberInputField {
+	i.config.Hidden = v
+	return i
+}
+
+//--
 
 // Min sets a minimum bound and enables its enforcement (including a
 // legitimate minimum of exactly 0).
@@ -337,10 +359,17 @@ func applyParsedValue(config *NumberInputConfig, text string) {
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
+
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
 	// Initial display text, used only to seed the hooks below on first mount.
 	displayValue := ""
 	if !config.Empty {
-		displayValue = formatNumber(config.Value, config.Decimals)
+		if config.Value != 0 {
+			displayValue = formatNumber(config.Value, config.Decimals)
+		}
 	}
 
 	// Track cursor position and the live editing buffer via retui's state.
@@ -396,9 +425,8 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 	justGainedFocus := focused && !wasFocused
 
 	if focused && !wasFocused {
-		// wasFocused = true
 		setWasFocused(true)
-		if config.SelectAllOnFocus {
+		if config.Value == 0 || config.SelectAllOnFocus {
 			selected = true
 			setSelected(true)
 		}
@@ -410,17 +438,17 @@ func renderNumberInput(focused bool, config *NumberInputConfig) retui.Element {
 	}
 
 	// Trigger focus/blur events
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
 	// Handle keyboard input when focused. justGainedFocus is excluded so
 	// the key that caused focus to move here isn't also treated as an
 	// edit/deselect action inside this field (see comment above).
-	if focused && !justGainedFocus {
+	if focused && !justGainedFocus && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {
@@ -627,16 +655,10 @@ render:
 	// cursor position.
 	textStyle := config.Style
 	if focused {
-		if selected {
-			textStyle = textStyle.
-				Foreground(retui.White).Bold(true).
-				Background(retui.Gray(2)).
-				Bold(true)
-		} else {
-			textStyle = textStyle.
-				Foreground(retui.White).Bold(true)
-
-		}
+		textStyle = textStyle.
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
+			Bold(true)
 	} else {
 		textStyle = textStyle.
 			Foreground(retui.White).Bold(true)
@@ -763,7 +785,7 @@ func ExampleNumberUsage() retui.Element {
 	// instead of reverting to the placeholder.
 	priceInput := NumberInput().
 		ID("price").
-		Placeholder("0.00").
+		Placeholder("").
 		Width(25).
 		Min(0).
 		Max(9999.99).

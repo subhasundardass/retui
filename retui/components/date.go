@@ -27,6 +27,9 @@ type DateConfig struct {
 	Suffix      string
 	Min         string // Minimum allowed date, formatted per Format ("" = no limit)
 	Max         string // Maximum allowed date, formatted per Format ("" = no limit)
+	Disabled    bool
+	ReadOnly    bool
+	Hidden      bool
 	OnChange    func(id string, value string)
 	OnKeyPress  func(id string, key retui.Key) bool
 	OnFocus     func(id string)
@@ -71,6 +74,9 @@ func DateInput() *DateInputField {
 			Suffix:      "",
 			Min:         "",
 			Max:         "",
+			Disabled:    false,
+			ReadOnly:    false,
+			Hidden:      false,
 			OnChange:    nil,
 			OnKeyPress:  nil,
 			OnFocus:     nil,
@@ -120,6 +126,22 @@ func (d *DateInputField) Style(s retui.Style) *DateInputField {
 	d.config.Style = s
 	return d
 }
+
+// --
+func (i *DateInputField) Disable(v bool) *DateInputField {
+	i.config.Disabled = v
+	return i
+}
+func (i *DateInputField) ReadOnly(v bool) *DateInputField {
+	i.config.ReadOnly = v
+	return i
+}
+func (i *DateInputField) Hidden(v bool) *DateInputField {
+	i.config.Hidden = v
+	return i
+}
+
+//--
 
 // Min sets the earliest allowed date, formatted per Format.
 func (d *DateInputField) Min(v string) *DateInputField {
@@ -405,6 +427,12 @@ func evaluateDate(config *DateConfig, rawDigits, mask string) (ok bool, msg stri
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderDateInput(focused bool, config *DateConfig) retui.Element {
+
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
+
 	mask := config.Format
 	if mask == "" {
 		mask = "YYYY-MM-DD"
@@ -445,15 +473,15 @@ func renderDateInput(focused bool, config *DateConfig) retui.Element {
 	}
 
 	// Trigger focus/blur events
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
 	// Handle keyboard input when focused
-	if focused {
+	if focused && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {
@@ -558,19 +586,15 @@ render:
 	textStyle := config.Style
 	if focused {
 		textStyle = textStyle.
-			Foreground(retui.BrightWhite).
-			Background(retui.Blue).
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
 			Bold(true)
 	} else {
 		textStyle = textStyle.
-			Foreground(retui.BrightBlack).
-			Background(retui.Hex("#0c0c0c")).
-			Bold(true)
-	}
-	if !isValid && !focused {
-		textStyle = textStyle.Foreground(retui.Red)
+			Foreground(retui.White).Bold(true)
 	}
 
+	// Border color based on focus and validation
 	// Border color based on focus and validation
 	borderColor := retui.BrightBlack
 	if focused {
@@ -579,6 +603,16 @@ render:
 		} else {
 			borderColor = retui.Red
 		}
+	}
+
+	bracketStyle := retui.NewStyle()
+	if focused {
+		bracketStyle = bracketStyle.
+			Foreground(borderColor).
+			Bold(true)
+	} else {
+		bracketStyle = bracketStyle.
+			Foreground(retui.BrightBlack)
 	}
 
 	prefixStyle := retui.NewStyle().Foreground(retui.BrightBlack)
