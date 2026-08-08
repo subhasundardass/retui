@@ -39,6 +39,24 @@ type Window struct {
 	BodyBgColor     retui.Color // Background color for the window body
 }
 
+// CurrentScreenWidth returns the live terminal width from retui core if
+// available (non-zero), falling back to DefaultScreenWidth otherwise.
+func currentScreenWidth() int {
+	if retui.CurrentScreenWidth > 0 {
+		return retui.CurrentScreenWidth
+	}
+	return DefaultScreenWidth
+}
+
+// CurrentScreenHeight returns the live terminal height from retui core
+// if available (non-zero), falling back to DefaultScreenHeight otherwise.
+func currentScreenHeight() int {
+	if retui.CurrentScreenHeight > 0 {
+		return retui.CurrentScreenHeight
+	}
+	return DefaultScreenHeight
+}
+
 // NewWindow creates a new window with given content.
 // Window starts hidden - you must call Show() to display it.
 func NewWindow() *Window {
@@ -51,8 +69,8 @@ func NewWindow() *Window {
 		Title:   "Window",
 		Width:   40,
 		Height:  15,
-		X:       (DefaultScreenWidth - width) / 2,
-		Y:       (DefaultScreenHeight - height) / 2,
+		X:       (currentScreenWidth() - width) / 2,
+		Y:       (currentScreenHeight() - height) / 2,
 		Modal:   false,
 		visible: false,
 		focused: false,

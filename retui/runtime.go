@@ -2,9 +2,7 @@ package retui
 
 import (
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -252,9 +250,11 @@ func (a *App) Run(fn func(props Props) Element, props Props) {
 	}
 
 	// SIGWINCH handler for terminal resize events.
-	resize := make(chan os.Signal, 1)
-	signal.Notify(resize, syscall.SIGWINCH)
-	defer signal.Stop(resize) // Clean up signal handler on exit
+	// resize := make(chan os.Signal, 1)
+	// signal.Notify(resize, syscall.SIGWINCH)
+	// defer signal.Stop(resize) // Clean up signal handler on exit
+	resize, stopResize := newResizeChan()
+	defer stopResize()
 
 	// Ticker goroutine: sends alternating tick state every 500ms.
 	// Used by components for animations, blinking, etc.

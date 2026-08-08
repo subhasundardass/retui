@@ -17,6 +17,9 @@ type InputConfig struct {
 	Suffix      string
 	MinLength   int // Minimum length (0 = no limit)
 	MaxLength   int // Maximum length (0 = no limit)
+	Disabled    bool
+	ReadOnly    bool
+	Hidden      bool
 	OnChange    func(id string, value string)
 	OnKeyPress  func(id string, key retui.Key) bool
 	OnFocus     func(id string)
@@ -43,6 +46,9 @@ func TextInput() *InputField {
 			Suffix:      "",
 			MinLength:   0,
 			MaxLength:   0,
+			Disabled:    false,
+			ReadOnly:    false,
+			Hidden:      false,
 			OnChange:    nil,
 			OnKeyPress:  nil,
 			OnFocus:     nil,
@@ -98,10 +104,26 @@ func (i *InputField) MaxLength(v int) *InputField {
 	return i
 }
 
+// --
+func (i *InputField) Disable(v bool) *InputField {
+	i.config.Disabled = v
+	return i
+}
+func (i *InputField) ReadOnly(v bool) *InputField {
+	i.config.ReadOnly = v
+	return i
+}
+func (i *InputField) Hidden(v bool) *InputField {
+	i.config.Hidden = v
+	return i
+}
+
 func (i *InputField) Focused(v bool) *InputField {
 	i.focused = v
 	return i
 }
+
+//--
 
 func (i *InputField) OnChange(fn func(string, string)) *InputField {
 	i.config.OnChange = fn
@@ -137,6 +159,10 @@ func (i *InputField) Render() retui.Element {
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderInput(focused bool, config *InputConfig) retui.Element {
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
 	// Work in rune-space throughout so multi-byte UTF-8 characters
 	// (e.g. set via Value()) are never sliced through their middle.
 	runes := []rune(config.Value)
@@ -157,16 +183,16 @@ func renderInput(focused bool, config *InputConfig) retui.Element {
 	}
 
 	// Trigger focus/blur events
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
 
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
 	// Handle keyboard input when focused
-	if focused {
+	if focused && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {

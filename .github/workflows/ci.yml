@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.26.3", "1.23"]  # Include the version from go.mod
+        go-version: ["1.26.2", "1.26.3"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,8 +33,14 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      - name: Build
+      - name: Build (native)
         run: go build ./retui/...
+
+      - name: Build (windows cross-compile)
+        run: GOOS=windows GOARCH=amd64 go build ./retui/...
+
+      - name: Build (darwin cross-compile)
+        run: GOOS=darwin GOARCH=arm64 go build ./retui/...
 
       - name: Vet
         run: go vet ./retui/...
@@ -50,23 +56,39 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          go test ./retui/... -v -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./retui/...
+          # Find only packages that actually have _test.go files
+          TEST_PKGS=$(go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./retui/... | tr '\n' ' ')
+          
+          if [ -z "$TEST_PKGS" ]; then
+            echo "⚠️  No test files found in ./retui/..."
+            exit 1
+          fi
+          
+          echo "📋 Testing packages: $TEST_PKGS"
+          go test $TEST_PKGS -v -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./retui/...
 
       - name: Display coverage summary
         run: |
-          go tool cover -func=coverage.out | grep total
+          echo "📊 Coverage Summary:"
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Generate HTML coverage report
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.go-version }}
-          path: coverage.out
+          path: |
+            coverage.out
+            coverage.html
 
       - name: Upload test results on failure
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: test-results
+          name: test-results-${{ matrix.go-version }}
           path: |
             coverage.out
             *.test
@@ -81,7 +103,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.3"  # Use the version from go.mod
+          go-version: "1.26.3"
           cache: true
 
       - name: Install govulncheck
@@ -97,5 +119,4 @@ jobs:
         if: always()
         with:
           name: security-results
-          path: |
-            vuln-report.json
+          path: vuln-report.json

@@ -16,6 +16,9 @@ type CheckboxConfig struct {
 	Style          retui.Style
 	CheckedStyle   retui.Style
 	UncheckedStyle retui.Style
+	Disabled       bool
+	ReadOnly       bool
+	Hidden         bool
 	OnChange       func(id string, checked bool)
 	OnKeyPress     func(id string, key retui.Key) bool
 	OnFocus        func(id string)
@@ -48,6 +51,9 @@ func Checkbox() *CheckboxField {
 			Style:          retui.NewStyle(),
 			CheckedStyle:   retui.NewStyle().Foreground(retui.Green).Bold(true),
 			UncheckedStyle: retui.NewStyle().Foreground(retui.BrightBlack),
+			Disabled:       false,
+			ReadOnly:       false,
+			Hidden:         false,
 			OnChange:       nil,
 			OnKeyPress:     nil,
 			OnFocus:        nil,
@@ -97,6 +103,22 @@ func (c *CheckboxField) Focused(v bool) *CheckboxField {
 	return c
 }
 
+// --
+func (i *CheckboxField) Disable(v bool) *CheckboxField {
+	i.config.Disabled = v
+	return i
+}
+func (i *CheckboxField) ReadOnly(v bool) *CheckboxField {
+	i.config.ReadOnly = v
+	return i
+}
+func (i *CheckboxField) Hidden(v bool) *CheckboxField {
+	i.config.Hidden = v
+	return i
+}
+
+//--
+
 func (c *CheckboxField) OnChange(fn func(string, bool)) *CheckboxField {
 	c.config.OnChange = fn
 	return c
@@ -126,6 +148,10 @@ func (c *CheckboxField) Render() retui.Element {
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderCheckbox(focused bool, config *CheckboxConfig) retui.Element {
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
 	// Track checked state
 	checked, setChecked := retui.UseState(config.Checked)
 
@@ -135,16 +161,16 @@ func renderCheckbox(focused bool, config *CheckboxConfig) retui.Element {
 	}
 
 	// Trigger focus/blur events
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
 
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
 	// Handle keyboard input when focused
-	if focused {
+	if focused && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {

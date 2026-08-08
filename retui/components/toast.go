@@ -264,6 +264,10 @@ var defaultToasts = NewToastManager()
 //	    components.WithDefaultPosition(components.ToastTopRight),
 //	    components.WithDefaultDuration(4*time.Second),
 //	)
+//
+// Show error toast — auto-dismisses after default duration
+// components.ShowError(err.Error())
+
 func ConfigureToasts(opts ...ManagerOption) {
 	defaultToasts.Configure(opts...)
 }
