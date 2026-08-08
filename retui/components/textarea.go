@@ -18,6 +18,9 @@ type TextAreaConfig struct {
 	Suffix      string
 	MinLength   int
 	MaxLength   int
+	Disabled    bool
+	ReadOnly    bool
+	Hidden      bool
 	OnChange    func(id string, value string)
 	OnKeyPress  func(id string, key retui.Key) bool
 	OnFocus     func(id string)
@@ -45,6 +48,9 @@ func TextArea() *TextAreaField {
 			Suffix:      "",
 			MinLength:   0,
 			MaxLength:   0,
+			Disabled:    false,
+			ReadOnly:    false,
+			Hidden:      false,
 			OnChange:    nil,
 			OnKeyPress:  nil,
 			OnFocus:     nil,
@@ -105,6 +111,22 @@ func (t *TextAreaField) MaxLength(v int) *TextAreaField {
 	return t
 }
 
+// --
+func (i *TextAreaField) Disable(v bool) *TextAreaField {
+	i.config.Disabled = v
+	return i
+}
+func (i *TextAreaField) ReadOnly(v bool) *TextAreaField {
+	i.config.ReadOnly = v
+	return i
+}
+func (i *TextAreaField) Hidden(v bool) *TextAreaField {
+	i.config.Hidden = v
+	return i
+}
+
+//--
+
 func (t *TextAreaField) Focused(v bool) *TextAreaField {
 	t.focused = v
 	return t
@@ -144,6 +166,12 @@ func (t *TextAreaField) Render() retui.Element {
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderTextArea(focused bool, config *TextAreaConfig) retui.Element {
+
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
+
 	runes := []rune(config.Value)
 
 	// Single absolute cursor position, same as TextInput — no separate
@@ -160,15 +188,15 @@ func renderTextArea(focused bool, config *TextAreaConfig) retui.Element {
 		setPos(pos)
 	}
 
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
 
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
-	if focused {
+	if focused && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {
@@ -286,14 +314,12 @@ render:
 	textStyle := config.Style
 	if focused {
 		textStyle = textStyle.
-			Foreground(retui.BrightWhite).
-			Background(retui.Blue).
+			Foreground(retui.White).Bold(true).
+			Background(retui.Gray(2)).
 			Bold(true)
 	} else {
 		textStyle = textStyle.
-			Foreground(retui.BrightBlack).
-			Background(retui.Hex("#0c0c0c")).
-			Bold(true)
+			Foreground(retui.White).Bold(true)
 	}
 
 	bracketStyle := retui.NewStyle()

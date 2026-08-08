@@ -16,13 +16,20 @@ import (
 //   - Order: Tab navigation order for cycling through focusable components
 //   - Stack: Modal/dialog stack for nested focus contexts
 //   - Capture: A component that intercepts all keyboard events (e.g., dropdown)
+//   - Disabled/Hidden/ReadOnly: per-component state flags that affect focus
 //
-// Focus Flow:
-//  1. A component is set as current (focused)
-//  2. User presses Tab/Shift+Tab to navigate focus order
-//  3. A component can capture focus to handle all keys (dropdown, modal)
-//  4. Modals push/pop focus on the stack
-//  5. UseFocusedKey hook checks if current component should handle the key
+// Component State Flags:
+//
+//	Disabled: Component cannot receive focus at all. Skipped by Next()/Prev(),
+//	          rejected by SetFocus(). Existing capture is released if the
+//	          captured component becomes disabled.
+//	Hidden:   Same focus behavior as Disabled (invisible components shouldn't
+//	          receive keyboard input), tracked separately so callers can query
+//	          "why" a component isn't focusable.
+//	ReadOnly: Does NOT affect focus at all. A read-only component can still be
+//	          tabbed to (e.g. to scroll/select/copy its content); it's up to
+//	          the component's own key handler to consult IsReadOnly() and
+//	          refuse to mutate its value.
 //
 // Thread Safety:
 //
@@ -48,6 +55,16 @@ type FocusManager struct {
 	// When set, that component receives all keyboard input (no other component
 	// can process keys). Used for dropdowns, autocomplete, etc.
 	capture string
+
+	// disabled tracks which component IDs cannot receive focus at all.
+	disabled map[string]bool
+
+	// hidden tracks which component IDs are not visible and cannot receive focus.
+	hidden map[string]bool
+
+	// readonly tracks which component IDs are focusable but not editable.
+	// This does not affect focus routing; components consult it themselves.
+	readonly map[string]bool
 }
 
 // NewFocusManager creates a new focus manager with no initial focus.
@@ -55,8 +72,11 @@ type FocusManager struct {
 // Returns: A fully initialized FocusManager ready for use.
 func NewFocusManager() *FocusManager {
 	return &FocusManager{
-		order: []string{},
-		stack: []string{},
+		order:    []string{},
+		stack:    []string{},
+		disabled: make(map[string]bool),
+		hidden:   make(map[string]bool),
+		readonly: make(map[string]bool),
 	}
 }
 
@@ -73,10 +93,20 @@ func NewFocusManager() *FocusManager {
 // If id is not in the order list, it still becomes current, but Tab navigation
 // won't cycle through it. This is allowed for components that are focusable
 // but not tab-navigable (e.g., dynamically added components).
-func (f *FocusManager) SetFocus(id string) {
+//
+// If id is disabled or hidden, focus is NOT changed and false is returned.
+//
+// Returns: True if focus was granted, false if id is disabled/hidden.
+func (f *FocusManager) SetFocus(id string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.disabled[id] || f.hidden[id] {
+		return false
+	}
+
 	f.current = id
+	return true
 }
 
 // Current returns the ID of the component that currently has focus.
@@ -99,6 +129,164 @@ func (f *FocusManager) IsFocused(id string) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.current == id
+}
+
+// ============================================================================
+// Component State: Disabled / ReadOnly / Hidden
+// ============================================================================
+
+// SetDisabled marks a component as disabled or enabled.
+//
+// A disabled component cannot receive focus: it is skipped by Next()/Prev()
+// and rejected by SetFocus(). If the currently focused component is disabled,
+// focus automatically advances to the next focusable component in the tab
+// order (or clears to "" if none remain). Any active keyboard capture held by
+// a component being disabled is also released.
+//
+// Triggers a re-render automatically if the flag actually changes (no-op,
+// no render, if disabled already matched the current state).
+func (f *FocusManager) SetDisabled(id string, disabled bool) {
+	f.mu.Lock()
+	changed := f.disabled[id] != disabled
+	if disabled {
+		f.disabled[id] = true
+	} else {
+		delete(f.disabled, id)
+	}
+	if disabled {
+		f.handleUnfocusable(id)
+	}
+	f.mu.Unlock()
+
+	if changed {
+		requestRender()
+	}
+}
+
+// IsDisabled checks if a component is disabled.
+func (f *FocusManager) IsDisabled(id string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.disabled[id]
+}
+
+// SetHidden marks a component as hidden or visible.
+//
+// A hidden component cannot receive focus: it is skipped by Next()/Prev()
+// and rejected by SetFocus(). If the currently focused component becomes
+// hidden, focus automatically advances to the next focusable component (or
+// clears to "" if none remain). Any active keyboard capture held by a
+// component being hidden is also released.
+//
+// Triggers a re-render automatically if the flag actually changes (no-op,
+// no render, if hidden already matched the current state).
+func (f *FocusManager) SetHidden(id string, hidden bool) {
+	f.mu.Lock()
+	changed := f.hidden[id] != hidden
+	if hidden {
+		f.hidden[id] = true
+	} else {
+		delete(f.hidden, id)
+	}
+	if hidden {
+		f.handleUnfocusable(id)
+	}
+	f.mu.Unlock()
+
+	if changed {
+		requestRender()
+	}
+}
+
+// IsHidden checks if a component is hidden.
+func (f *FocusManager) IsHidden(id string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.hidden[id]
+}
+
+// SetReadOnly marks a component as read-only or editable.
+//
+// ReadOnly does NOT affect focus routing — a read-only component remains
+// focusable via Tab/SetFocus so its content can still be viewed, selected,
+// or scrolled. Components should consult IsReadOnly() in their own key
+// handlers (typically via UseFocusedKey) and refuse to mutate state when true.
+//
+// Triggers a re-render automatically if the flag actually changes (no-op,
+// no render, if readonly already matched the current state) — a field's
+// visual styling (e.g. dimmed/lock icon) typically depends on this flag.
+func (f *FocusManager) SetReadOnly(id string, readonly bool) {
+	f.mu.Lock()
+	changed := f.readonly[id] != readonly
+	if readonly {
+		f.readonly[id] = true
+	} else {
+		delete(f.readonly, id)
+	}
+	f.mu.Unlock()
+
+	if changed {
+		requestRender()
+	}
+}
+
+// IsReadOnly checks if a component is read-only.
+func (f *FocusManager) IsReadOnly(id string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.readonly[id]
+}
+
+// handleUnfocusable is called (while already holding the lock) after a
+// component transitions to disabled or hidden. If that component currently
+// holds focus or capture, it releases capture and advances focus to the next
+// focusable component in tab order.
+func (f *FocusManager) handleUnfocusable(id string) {
+	if f.capture == id {
+		f.capture = ""
+	}
+
+	if f.current != id {
+		return
+	}
+
+	// Try to advance to the next focusable component in order.
+	next := f.nextFocusableFrom(id, +1)
+	f.current = next
+}
+
+// isFocusable reports whether id can currently receive focus.
+// Caller must hold at least a read lock.
+func (f *FocusManager) isFocusable(id string) bool {
+	return !f.disabled[id] && !f.hidden[id]
+}
+
+// nextFocusableFrom scans the tab order starting after (or before, if
+// direction is -1) startID and returns the first focusable component ID.
+// Returns "" if no focusable component exists in the order.
+// Caller must hold the write lock.
+func (f *FocusManager) nextFocusableFrom(startID string, direction int) string {
+	if len(f.order) == 0 {
+		return ""
+	}
+
+	idx := f.indexOf(startID)
+	if idx < 0 {
+		idx = 0
+	}
+
+	for i := 1; i <= len(f.order); i++ {
+		candidate := (idx + direction*i) % len(f.order)
+		if candidate < 0 {
+			candidate += len(f.order)
+		}
+		id := f.order[candidate]
+		if f.isFocusable(id) {
+			return id
+		}
+	}
+
+	return ""
 }
 
 // ============================================================================
@@ -137,15 +325,17 @@ func (f *FocusManager) SetOrder(order []string) error {
 	return nil
 }
 
-// Next moves focus to the next component in the tab order.
+// Next moves focus to the next focusable component in the tab order.
 //
 // Behavior:
+//   - Skips any component that is Disabled or Hidden
 //   - If current is at the end, wraps to the start (circular)
-//   - Does nothing if order is empty
+//   - Does nothing if order is empty, or if every component is unfocusable
 //   - Does nothing if capture is active (dropdown/modal has focus lock)
 //   - Typically called when user presses Tab
 //
-// Returns: The ID of the new focus, or empty string if no change.
+// Returns: The ID of the new focus, or the current (unchanged) focus if
+// navigation could not proceed.
 func (f *FocusManager) Next() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -161,26 +351,31 @@ func (f *FocusManager) Next() string {
 
 	idx := f.indexOf(f.current)
 	if idx < 0 {
-		// Current not in order; jump to first
-		f.current = f.order[0]
+		// Current not in order; jump to first focusable
+		if next := f.nextFocusableFrom(f.order[len(f.order)-1], +1); next != "" {
+			f.current = next
+		}
 		return f.current
 	}
 
-	// Move to next, wrap to start if at end
-	nextIdx := (idx + 1) % len(f.order)
-	f.current = f.order[nextIdx]
+	next := f.nextFocusableFrom(f.current, +1)
+	if next != "" {
+		f.current = next
+	}
 	return f.current
 }
 
-// Prev moves focus to the previous component in the tab order.
+// Prev moves focus to the previous focusable component in the tab order.
 //
 // Behavior:
+//   - Skips any component that is Disabled or Hidden
 //   - If current is at the start, wraps to the end (circular)
-//   - Does nothing if order is empty
+//   - Does nothing if order is empty, or if every component is unfocusable
 //   - Does nothing if capture is active
 //   - Typically called when user presses Shift+Tab
 //
-// Returns: The ID of the new focus, or empty string if no change.
+// Returns: The ID of the new focus, or the current (unchanged) focus if
+// navigation could not proceed.
 func (f *FocusManager) Prev() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -196,17 +391,17 @@ func (f *FocusManager) Prev() string {
 
 	idx := f.indexOf(f.current)
 	if idx < 0 {
-		// Current not in order; jump to last
-		f.current = f.order[len(f.order)-1]
+		// Current not in order; jump to last focusable
+		if prev := f.nextFocusableFrom(f.order[0], -1); prev != "" {
+			f.current = prev
+		}
 		return f.current
 	}
 
-	// Move to previous, wrap to end if at start
-	nextIdx := idx - 1
-	if nextIdx < 0 {
-		nextIdx = len(f.order) - 1
+	prev := f.nextFocusableFrom(f.current, -1)
+	if prev != "" {
+		f.current = prev
 	}
-	f.current = f.order[nextIdx]
 	return f.current
 }
 
@@ -235,6 +430,10 @@ func (f *FocusManager) indexOf(id string) int {
 //
 //	id: The component ID for the modal/dialog.
 //
+// Note: PushFocus does not check Disabled/Hidden — modals are assumed to be
+// deliberately opened by the caller. If you need that guard, check
+// IsDisabled/IsHidden before calling.
+//
 // When the modal closes, call PopFocus() to restore the previous focus.
 func (f *FocusManager) PushFocus(id string) {
 	f.mu.Lock()
@@ -258,6 +457,9 @@ func (f *FocusManager) PushFocus(id string) {
 //   - Previous focus is restored from the stack
 //   - Returns to normal focus flow
 //
+// If the restored focus is now disabled/hidden, advances to the next
+// focusable component in tab order instead.
+//
 // If the stack is empty, does nothing (stays at current focus).
 //
 // Returns: The ID of the restored focus, or current if stack is empty.
@@ -270,8 +472,15 @@ func (f *FocusManager) PopFocus() string {
 	}
 
 	// Pop from stack
-	f.current = f.stack[len(f.stack)-1]
+	restored := f.stack[len(f.stack)-1]
 	f.stack = f.stack[:len(f.stack)-1]
+	f.current = restored
+
+	if !f.isFocusable(restored) {
+		if next := f.nextFocusableFrom(restored, +1); next != "" {
+			f.current = next
+		}
+	}
 
 	return f.current
 }
@@ -293,10 +502,16 @@ func (f *FocusManager) PopFocus() string {
 //	id: The component ID to capture focus.
 //
 // Only one component can have capture at a time. Calling CaptureFocus again
-// replaces the previous capture.
+// replaces the previous capture. Disabled/Hidden components cannot capture
+// focus; the call is a no-op in that case.
 func (f *FocusManager) CaptureFocus(id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.disabled[id] || f.hidden[id] {
+		return
+	}
+
 	f.capture = id
 }
 
@@ -362,11 +577,19 @@ func (f *FocusManager) HasCapture(id string) bool {
 // Behavior:
 //   - Returns the current key and whether the component should handle it
 //   - Component only handles the key if:
-//     1. Component has focus (current)
-//     2. Key hasn't been consumed by another component (Key.consumed is false)
+//     1. Component is not Disabled (safety net; disabled components should
+//     never hold focus, but this guards against stale state)
+//     2. Component has focus (current)
+//     3. Key hasn't been consumed by another component (Key.consumed is false)
 //   - Marks the key as consumed (Key.consumed = true) when claimed
 //   - Prevents key duplication: each key is handled by exactly one component
 //   - Returns empty key and false if component shouldn't handle input
+//
+// Note on ReadOnly: UseFocusedKey does NOT check IsReadOnly. A read-only
+// component should still receive navigation/selection keys (arrows, copy,
+// etc.); it's the component's responsibility to check
+// GlobalFocus's IsReadOnly(componentID) before acting on mutating keys
+// like typing or delete.
 //
 // Parameters:
 //
@@ -377,30 +600,15 @@ func (f *FocusManager) HasCapture(id string) bool {
 //
 //	key:   The current keyboard input (or empty if not applicable)
 //	isMine: True if this component should handle the key, false otherwise
-//
-// Key Consumption:
-//   - Uses Key.consumed field to track if key was already claimed
-//   - When a component claims a key, Key.consumed is set to true
-//   - Other components see Key.consumed=true and don't claim it
-//   - CurrentKey is cleared after each render frame, resetting all keys
-//
-// Example:
-//
-//	func render(props Props) Element {
-//	    key, isMine := UseFocusedKey("input", currentFocus == "input")
-//	    if isMine {
-//	        switch key.Code {
-//	        case KeyEnter:
-//	            return handleEnter()
-//	        case KeyEscape:
-//	            return handleEscape()
-//	        }
-//	    }
-//	    return Element{...}
-//	}
 func UseFocusedKey(componentID string, isFocused bool) (key Key, isMine bool) {
 	key = CurrentKey
 	if key == (Key{}) {
+		return key, false
+	}
+
+	// Safety net: a disabled component should never claim a key, even if it
+	// somehow still holds focus/capture (e.g. stale state during a transition).
+	if globalFocus.IsDisabled(componentID) {
 		return key, false
 	}
 
@@ -432,8 +640,9 @@ func UseFocusedKey(componentID string, isFocused bool) (key Key, isMine bool) {
 var globalFocus = NewFocusManager()
 
 // SetFocus sets the global focus to a component.
-func SetFocus(id string) {
-	globalFocus.SetFocus(id)
+// Returns false if the component is disabled or hidden.
+func SetFocus(id string) bool {
+	return globalFocus.SetFocus(id)
 }
 
 // CurrentFocus returns the currently focused component ID.
@@ -451,12 +660,12 @@ func SetFocusOrder(order []string) error {
 	return globalFocus.SetOrder(order)
 }
 
-// FocusNext moves focus to the next component in the tab order.
+// FocusNext moves focus to the next focusable component in the tab order.
 func FocusNext() {
 	globalFocus.Next()
 }
 
-// FocusPrev moves focus to the previous component in the tab order.
+// FocusPrev moves focus to the previous focusable component in the tab order.
 func FocusPrev() {
 	globalFocus.Prev()
 }
@@ -489,4 +698,34 @@ func CapturedFocus() string {
 // HasFocusCapture checks if a component has capture.
 func HasFocusCapture(id string) bool {
 	return globalFocus.HasCapture(id)
+}
+
+// SetDisabled marks a global component as disabled or enabled.
+func SetDisabled(id string, disabled bool) {
+	globalFocus.SetDisabled(id, disabled)
+}
+
+// IsDisabled checks if a global component is disabled.
+func IsDisabled(id string) bool {
+	return globalFocus.IsDisabled(id)
+}
+
+// SetHidden marks a global component as hidden or visible.
+func SetHidden(id string, hidden bool) {
+	globalFocus.SetHidden(id, hidden)
+}
+
+// IsHidden checks if a global component is hidden.
+func IsHidden(id string) bool {
+	return globalFocus.IsHidden(id)
+}
+
+// SetReadOnly marks a global component as read-only or editable.
+func SetReadOnly(id string, readonly bool) {
+	globalFocus.SetReadOnly(id, readonly)
+}
+
+// IsReadOnly checks if a global component is read-only.
+func IsReadOnly(id string) bool {
+	return globalFocus.IsReadOnly(id)
 }

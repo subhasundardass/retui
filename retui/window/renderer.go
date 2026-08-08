@@ -103,11 +103,6 @@ func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 func (or *OverlayRenderer) buildTitleBar(w *Window) retui.Element {
 	title := w.Title
 
-	// Add [MODAL] indicator for modal windows
-	if w.Modal {
-		title = title + "#"
-	}
-
 	titleBarBg := w.GetTitleBarBgColor()
 	if titleBarBg == (retui.Color{}) {
 		titleBarBg = defaultTitleBarBgColor

@@ -17,6 +17,8 @@ type ButtonConfig struct {
 	ActiveStyle retui.Style
 	Prefix      string
 	Suffix      string
+	Disabled    bool
+	Hidden      bool
 	OnClick     func(id string)
 	OnKeyPress  func(id string, key retui.Key) bool
 	OnFocus     func(id string)
@@ -42,6 +44,8 @@ func Button() *ButtonField {
 			ActiveStyle: retui.NewStyle().Foreground(retui.White).Background(retui.Navy).Bold(true),
 			Prefix:      "",
 			Suffix:      "",
+			Disabled:    false,
+			Hidden:      false,
 			OnClick:     nil,
 			OnKeyPress:  nil,
 			OnFocus:     nil,
@@ -102,6 +106,19 @@ func (b *ButtonField) Active(v bool) *ButtonField {
 	return b
 }
 
+// --
+func (i *ButtonField) Disable(v bool) *ButtonField {
+	i.config.Disabled = v
+	return i
+}
+
+func (i *ButtonField) Hidden(v bool) *ButtonField {
+	i.config.Hidden = v
+	return i
+}
+
+//--
+
 func (b *ButtonField) OnClick(fn func(string)) *ButtonField {
 	b.config.OnClick = fn
 	return b
@@ -131,6 +148,11 @@ func (b *ButtonField) Render() retui.Element {
 // ─── Core Rendering Function ────────────────────────────────────────────
 
 func renderButton(focused bool, active bool, config *ButtonConfig) retui.Element {
+
+	// Hidden
+	if config.Hidden {
+		return retui.Element{}
+	}
 	// Track active state
 	isActive, setActive := retui.UseState(active)
 
@@ -140,16 +162,16 @@ func renderButton(focused bool, active bool, config *ButtonConfig) retui.Element
 	}
 
 	// Trigger focus/blur events
-	if focused && config.OnFocus != nil && config.ID != "" {
+	if !config.Disabled && focused && config.OnFocus != nil && config.ID != "" {
 		config.OnFocus(config.ID)
 	}
 
-	if !focused && config.OnBlur != nil && config.ID != "" {
+	if !config.Disabled && !focused && config.OnBlur != nil && config.ID != "" {
 		config.OnBlur(config.ID)
 	}
 
 	// Handle keyboard input when focused
-	if focused {
+	if focused && !config.Disabled {
 		key := retui.CurrentKey
 
 		if config.OnKeyPress != nil && config.ID != "" {

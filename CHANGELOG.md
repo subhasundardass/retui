@@ -6,20 +6,30 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
+## [v0.8.0] - 2026-08-07
+
+### Added
+
+- Form
+- Disable, Hidden & Readonly to all Input
+
+### Updates
+
+- syscall.SIGWINCH (Windows/Linux)
+
+-
+
 ## [v0.7.0] - 2026-08-03
 
 ### Added
 
-- Border title with custom style support
-- Toast component
-- New state hooks:
-  - UseRef
-  - UseMemo
-  - UseReducer
+- Add Border Title with Style
+- Added Toast component
+- Added UseRef, UseMemo, UseReducer Hooks in State
 
-### Changed
+### Updates
 
-- Improved responsive UI behavior and layout handling
+- Update Responsive UI
 
 ---
 
