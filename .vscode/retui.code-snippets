@@ -1,186 +1,269 @@
 {
-    "RetUI Component": {
-        "scope": "go",
-        "prefix": "rcomp",
-        "description": "Create a RetUI component",
-        "body": [
-            "func ${1:Component}(props retui.Props) retui.Element {",
-            "\treturn retui.Box(",
-            "\t\tretui.Text(\"${2:Hello RetUI}\"),",
-            "\t)",
-            "}"
-        ]
-    },
+  "RetUI Component": {
+    "scope": "go",
+    "prefix": "rcomp",
+    "description": "Create a RetUI component",
+    "body": [
+      "func ${1:Component}() retui.Element {",
+      "\treturn retui.Box(",
+      "\t\tretui.Props{",
+      "\t\t\tGap: 1,",
+      "\t\t},",
+      "\t\tretui.NewStyle(),",
+      "\t\t$0",
+      "\t)",
+      "}"
+    ]
+  },
 
-    "RetUI Screen": {
-        "scope": "go",
-        "prefix": "rscreen",
-        "description": "Create a RetUI screen",
-        "body": [
-            "package ${1:screen}",
-            "",
-            "import (",
-            "\t\"github.com/subhasundardass/retui/retui\"",
-            ")",
-            "",
-            "func ${2:Screen}(props retui.Props) retui.Element {",
-            "\treturn retui.Box(",
-            "\t\tretui.Text(\"${3:Screen}\"),",
-            "\t)",
-            "}"
-        ]
-    },
+  "RetUI Screen": {
+    "scope": "go",
+    "prefix": "rscreen",
+    "description": "Create a RetUI screen component",
+    "body": [
+      "package ${1:views}",
+      "",
+      "import (",
+      "\t\"github.com/subhasundardass/retui/retui\"",
+      ")",
+      "",
+      "func ${2:Screen}() retui.Element {",
+      "\treturn retui.Box(",
+      "\t\tretui.Props{},",
+      "\t\tretui.NewStyle(),",
+      "\t\t$0",
+      "\t)",
+      "}"
+    ]
+  },
 
-    "RetUI Box": {
-        "scope": "go",
-        "prefix": "rbox",
-        "description": "RetUI Box",
-        "body": [
-            "retui.Box(",
-            "\tretui.Props{",
-            "\t\tGap: 1,",
-            "\t},",
-            "\tretui.NewStyle(),",
-            "\t$0",
-            ")"
-        ]
-    },
+  "RetUI Box": {
+    "scope": "go",
+    "prefix": "rbox",
+    "description": "RetUI Box",
+    "body": [
+      "retui.Box(",
+      "\tretui.Props{",
+      "\t\tGap: 1,",
+      "\t},",
+      "\tretui.NewStyle(),",
+      "\t$0",
+      ")"
+    ]
+  },
 
-    "RetUI Text": {
-        "scope": "go",
-        "prefix": "rtext",
-        "description": "RetUI Text",
-        "body": [
-            "retui.Text(\"${1:Text,}\")"
-        ]
-    },
+  "RetUI Row": {
+    "scope": "go",
+    "prefix": "rrow",
+    "description": "Horizontal Box",
+    "body": [
+      "retui.Box(",
+      "\tretui.Props{",
+      "\t\tDirection: retui.Row,",
+      "\t\tGap: 1,",
+      "\t},",
+      "\tretui.NewStyle(),",
+      "\t$0",
+      ")"
+    ]
+  },
 
-    "RetUI Panel": {
-        "scope": "go",
-        "prefix": "rpanel",
-        "description": "RetUI Panel",
-        "body": [
-            "components.Panel(",
-            "\tretui.Props{},",
-            "\t\"${1:Title}\",",
-            "\t$0,",
-            ")"
-        ]
-    },
+  "RetUI Column": {
+    "scope": "go",
+    "prefix": "rcol",
+    "description": "Vertical Box",
+    "body": [
+      "retui.Box(",
+      "\tretui.Props{",
+      "\t\tGap: 1,",
+      "\t},",
+      "\tretui.NewStyle(),",
+      "\t$0",
+      ")"
+    ]
+  },
 
-    "RetUI Button": {
-        "scope": "go",
-        "prefix": "rbutton",
-        "description": "RetUI Button",
-        "body": [
-            "components.Button(",
-            "\tretui.Props{},",
-            "\t\"${1:Button}\",",
-            "\tfunc() {",
-            "\t\t$0",
-            "\t},",
-            ")"
-        ]
-    },
+  "RetUI Text": {
+    "scope": "go",
+    "prefix": "rtext",
+    "description": "RetUI Text",
+    "body": [
+      "retui.Text(\"${1:Text}\", retui.NewStyle())"
+    ]
+  },
 
-    "RetUI Input": {
-        "scope": "go",
-        "prefix": "rinput",
-        "description": "RetUI Input",
-        "body": [
-            "components.Input(",
-            "\tretui.Props{},",
-            "\t&${1:value},",
-            "\tfunc(v string) {",
-            "\t\t${1:value} = v",
-            "\t},",
-            ")"
-        ]
-    },
+  "RetUI Panel": {
+    "scope": "go",
+    "prefix": "rpanel",
+    "description": "RetUI Panel",
+    "body": [
+      "components.Panel().",
+      "\tHeader(retui.Text(\"${1:Title}\", retui.NewStyle().Bold(true))).",
+      "\tChildren(",
+      "\t\t$0,",
+      "\t).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI UseState": {
-        "scope": "go",
-        "prefix": "rstate",
-        "description": "UseState",
-        "body": [
-            "${1:value}, set${2:Value} := retui.UseState(${3:\"\"})"
-        ]
-    },
+  "RetUI TextInput": {
+    "scope": "go",
+    "prefix": "rinput",
+    "description": "TextInput",
+    "body": [
+      "components.TextInput().",
+      "\tID(\"${1:id}\").",
+      "\tValue(${2:value}).",
+      "\tFocused(${3:false}).",
+      "\tOnChange(func(id, value string) {",
+      "\t\t$0",
+      "\t}).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI UseEffect": {
-        "scope": "go",
-        "prefix": "reffect",
-        "description": "UseEffect",
-        "body": [
-            "retui.UseEffect(func() {",
-            "\t$0",
-            "})"
-        ]
-    },
+  "RetUI NumberInput": {
+    "scope": "go",
+    "prefix": "rnumber",
+    "description": "Number Input",
+    "body": [
+      "components.NumberInput().",
+      "\tID(\"${1:id}\").",
+      "\tValue(${2:value}).",
+      "\tDecimals(2).",
+      "\tFocused(${3:false}).",
+      "\tOnChange(func(id string, value float64) {",
+      "\t\t$0",
+      "\t}).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI UseMemo": {
-        "scope": "go",
-        "prefix": "rmemo",
-        "description": "UseMemo",
-        "body": [
-            "${1:value} := retui.UseMemo(func() any {",
-            "\treturn ${2:nil}",
-            "})"
-        ]
-    },
+  "RetUI DateInput": {
+    "scope": "go",
+    "prefix": "rdate",
+    "description": "Date Input",
+    "body": [
+      "components.DateInput().",
+      "\tID(\"${1:id}\").",
+      "\tValue(${2:value}).",
+      "\tFormat(\"DD/MM/YYYY\").",
+      "\tFocused(${3:false}).",
+      "\tOnChange(func(id, value string) {",
+      "\t\t$0",
+      "\t}).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI Push Screen": {
-        "scope": "go",
-        "prefix": "rpush",
-        "description": "Push Screen",
-        "body": [
-            "retui.PushScreen(\"${1:screen_id}\", nil)"
-        ]
-    },
+  "RetUI Button": {
+    "scope": "go",
+    "prefix": "rbutton",
+    "description": "Button",
+    "body": [
+      "components.Button().",
+      "\tID(\"${1:id}\").",
+      "\tLabel(\"${2:Button}\").",
+      "\tOnClick(func() {",
+      "\t\t$0",
+      "\t}).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI Replace Screen": {
-        "scope": "go",
-        "prefix": "rreplace",
-        "description": "Replace Screen",
-        "body": [
-            "retui.ReplaceScreen(\"${1:screen_id}\", nil)"
-        ]
-    },
+  "RetUI SelectDropdown": {
+    "scope": "go",
+    "prefix": "rselect",
+    "description": "Select Dropdown",
+    "body": [
+      "components.SelectDropdown().",
+      "\tID(\"${1:id}\").",
+      "\tValue(${2:value}).",
+      "\tFocused(${3:false}).",
+      "\tOnFilter(func(id, query string) []components.SelectOption {",
+      "\t\treturn nil",
+      "\t}).",
+      "\tOnChange(func(id, value string) {",
+      "\t\t$0",
+      "\t}).",
+      "\tRender()"
+    ]
+  },
 
-    "RetUI Back": {
-        "scope": "go",
-        "prefix": "rback",
-        "description": "Back",
-        "body": [
-            "retui.Back()"
-        ]
-    },
+  "RetUI UseState": {
+    "scope": "go",
+    "prefix": "rstate",
+    "description": "UseState",
+    "body": [
+      "${1:value}, set${2:Value} := retui.UseState(${3:\"\"})"
+    ]
+  },
 
-    "RetUI Row": {
-        "scope": "go",
-        "prefix": "rrow",
-        "description": "Horizontal Box",
-        "body": [
-            "retui.Box(",
-            "\tretui.Props{",
-            "\t\tDirection: retui.Row,",
-            "\t},",
-            "\t$0,",
-            ")"
-        ]
-    },
+  "RetUI UseEffect": {
+    "scope": "go",
+    "prefix": "reffect",
+    "description": "UseEffect",
+    "body": [
+      "retui.UseEffect(func() func() {",
+      "\t$0",
+      "\treturn nil",
+      "}, []any{})"
+    ]
+  },
 
-    "RetUI Column": {
-        "scope": "go",
-        "prefix": "rcol",
-        "description": "Vertical Box",
-        "body": [
-            "retui.Box(",
-            "\tretui.Props{",
-            "\t\tDirection: retui.Column,",
-            "\t},",
-            "\t$0,",
-            ")"
-        ]
-    }
+  "RetUI UseMemo": {
+    "scope": "go",
+    "prefix": "rmemo",
+    "description": "UseMemo",
+    "body": [
+      "${1:value} := retui.UseMemo(func() ${2:any} {",
+      "\treturn ${3:nil}",
+      "}, []any{})"
+    ]
+  },
+
+  "RetUI UseForm": {
+    "scope": "go",
+    "prefix": "rform",
+    "description": "UseForm",
+    "body": [
+      "form := retui.UseForm(${1:State}{})"
+    ]
+  },
+
+  "RetUI Push Screen": {
+    "scope": "go",
+    "prefix": "rpush",
+    "description": "Push Screen",
+    "body": [
+      "retui.PushScreen(\"${1:screen}\", nil)"
+    ]
+  },
+
+  "RetUI Replace Screen": {
+    "scope": "go",
+    "prefix": "rreplace",
+    "description": "Replace Screen",
+    "body": [
+      "retui.ReplaceScreen(\"${1:screen}\", nil)"
+    ]
+  },
+
+  "RetUI Pop Screen": {
+    "scope": "go",
+    "prefix": "rpop",
+    "description": "Pop Screen",
+    "body": [
+      "retui.PopScreen()"
+    ]
+  },
+
+  "RetUI Debug": {
+    "scope": "go",
+    "prefix": "rdebug",
+    "description": "Debug",
+    "body": [
+      "retui.Debugf(\"${1:value}: %v\", ${2:value})"
+    ]
+  }
 }
