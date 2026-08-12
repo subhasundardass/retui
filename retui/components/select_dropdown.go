@@ -21,6 +21,8 @@ type SelectConfig struct {
 	Width        int
 	Height       int
 	Style        retui.Style
+	Prefix       string
+	Suffix       string
 	Disabled     bool
 	OnChange     func(id string, value string)
 	OnKeyPress   func(id string, key retui.Key) bool
@@ -63,6 +65,8 @@ func SelectDropdown() *SelectField {
 			Height:      5,
 			Style:       retui.NewStyle(),
 			Placeholder: "Select...",
+			Prefix:      "",
+			Suffix:      "",
 		},
 	}
 }
@@ -77,6 +81,8 @@ func (s *SelectField) Height(h int) *SelectField             { s.config.Height =
 func (s *SelectField) Style(st retui.Style) *SelectField     { s.config.Style = st; return s }
 func (s *SelectField) Disabled(v bool) *SelectField          { s.config.Disabled = v; return s }
 func (s *SelectField) Focused(v bool) *SelectField           { s.focused = v; return s }
+func (s *SelectField) Prefix(v string) *SelectField          { s.config.Prefix = v; return s }
+func (s *SelectField) Suffix(v string) *SelectField          { s.config.Suffix = v; return s }
 
 func (s *SelectField) OnChange(fn func(string, string)) *SelectField {
 	s.config.OnChange = fn
@@ -382,9 +388,13 @@ func buildSelectElement(
 		}
 	}
 
-	arrow := "▼"
+	// arrow := "▼"
+	// if isOpen {
+	// 	arrow = "▲"
+	// }
+	arrow := ""
 	if isOpen {
-		arrow = "▲"
+		arrow = ""
 	}
 
 	// Focused-background applies whenever the field is the active one,
@@ -408,18 +418,54 @@ func buildSelectElement(
 		arrowStyle = retui.NewStyle().Foreground(retui.Cyan).Bold(true)
 	}
 
-	paddedDisplay := truncateText(displayText, config.Width-2)
-	displayLen := len([]rune(paddedDisplay))
-	if displayLen < config.Width-2 {
-		paddedDisplay = paddedDisplay + strings.Repeat(" ", config.Width-2-displayLen)
+	// Calculate available width for display text (account for prefix, suffix, and arrow)
+	prefixLen := len([]rune(config.Prefix))
+	suffixLen := len([]rune(config.Suffix))
+	arrowLen := 1 // "▼" or "▲"
+	spacing := 2  // spaces between elements
+	availableWidth := config.Width - prefixLen - suffixLen - arrowLen - spacing
+
+	if availableWidth < 1 {
+		availableWidth = 1
 	}
+
+	paddedDisplay := truncateText(displayText, availableWidth)
+	displayLen := len([]rune(paddedDisplay))
+	if displayLen < availableWidth {
+		paddedDisplay = paddedDisplay + strings.Repeat(" ", availableWidth-displayLen)
+	}
+
+	// Build the input box with prefix, display text, suffix, and arrow
+	inputElements := []retui.Element{}
+
+	// Add prefix if present
+	if config.Prefix != "" {
+		prefixStyle := retui.NewStyle().Foreground(retui.BrightBlack).Bold(true)
+		if inputHighlighted {
+			prefixStyle = prefixStyle.Foreground(retui.Cyan).Bold(true)
+		}
+		inputElements = append(inputElements, retui.Text(config.Prefix, prefixStyle))
+	}
+
+	// Add display text
+	inputElements = append(inputElements, retui.Text(paddedDisplay, textStyle))
+
+	// Add suffix if present
+	if config.Suffix != "" {
+		suffixStyle := retui.NewStyle().Foreground(retui.BrightBlack).Bold(true)
+		if inputHighlighted {
+			suffixStyle = suffixStyle.Foreground(retui.Cyan).Bold(true)
+		}
+		inputElements = append(inputElements, retui.Text(config.Suffix, suffixStyle))
+	}
+
+	// Add arrow
+	inputElements = append(inputElements, retui.Text(arrow, arrowStyle))
 
 	inputBox := retui.Box(
 		retui.Props{Direction: retui.Row, Width: retui.Fixed(config.Width)},
 		retui.NewStyle(),
-		retui.Text(paddedDisplay, textStyle),
-		retui.Text(" ", retui.NewStyle()),
-		retui.Text(arrow, arrowStyle),
+		inputElements...,
 	)
 
 	// Local offset within the row: how far inputBox sits to the right of
@@ -444,7 +490,7 @@ func buildSelectElement(
 
 	searchInput := retui.Box(
 		retui.Props{Padding: [4]int{0, 1, 0, 1}},
-		retui.NewStyle().Border(retui.Border{Bottom: true, Color: retui.Cyan}),
+		retui.NewStyle().Border(retui.Border{Bottom: true, Color: retui.Gray(1)}),
 		retui.Box(
 			retui.Props{Direction: retui.Row, Gap: 1},
 			retui.NewStyle(),
@@ -476,7 +522,8 @@ func buildSelectElement(
 	overlayY := config.OverlayAbsY + 1
 
 	return retui.Box(
-		retui.Props{Direction: retui.Column},
+		// retui.Props{Direction: retui.Column},
+		retui.Props{Direction: retui.Column, Width: retui.Fixed(config.Width)},
 		retui.NewStyle(),
 		inputRow,
 		retui.Overlay(overlayX, overlayY, dropdownBox),

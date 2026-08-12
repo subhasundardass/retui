@@ -33,7 +33,24 @@ type InputField struct {
 }
 
 // ─── Builder Methods ──────────────────────────────────────────────────────
-
+// TextInput creates a new text input field with default configuration.
+//
+// The returned input field is enabled, editable, visible, and has a default
+// width of 30 characters.
+//
+// Example:
+//
+//	components.TextInput().
+//		ID("slno").
+//		Value(util.IntToString(v.SlNo)).
+//		Focused(v.FocusIndex == 0).
+//		OnChange(func(id, value string) {
+//			// Handle value changes.
+//		}).
+//		Render()
+//
+// Returns:
+//   - *InputField: A new text input field.
 func TextInput() *InputField {
 	return &InputField{
 		config: InputConfig{
@@ -283,10 +300,7 @@ render:
 	}
 
 	// Check validation
-	isValid := true
-	if config.MinLength > 0 && len(runes) < config.MinLength {
-		isValid = false
-	}
+	isValid := config.MinLength <= 0 || len(runes) >= config.MinLength
 
 	// Determine display value
 	display := config.Value

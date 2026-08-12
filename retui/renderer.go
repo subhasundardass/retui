@@ -168,20 +168,23 @@ type pendingOverlay struct {
 // Render computes layout and paints element tree to the screen in one atomic pass.
 //
 // Steps:
-// 1. Resolve deferred content (ContentBuilder nodes) with their measured sizes.
-// 2. Build layout tree from element tree.
-// 3. Measure intrinsic size and adjust screen height if needed.
-// 4. Compute layout (position and size each node).
-// 5. Paint main tree, deferring overlays.
-// 6. Paint deferred overlays on top.
-// 7. Ensure scrollback room if content overflows terminal viewport.
+//  1. Resolve deferred content (ContentBuilder nodes) with their measured sizes.
+//  2. Build layout tree from element tree.
+//  3. Measure intrinsic size and adjust screen height if needed.
+//  4. Compute layout (position and size each node).
+//  5. Paint main tree, deferring overlays. Painting is clipped to the screen
+//     bounds at the root, and further clipped at any node whose Overflow is
+//     OverflowHidden or OverflowScroll (see paint's childClip logic).
+//  6. Paint deferred overlays on top, each clipped to the screen bounds
+//     independently (an overlay is not clipped by its trigger's ancestors).
+//  7. Ensure scrollback room if content overflows terminal viewport.
 //
 // Cell-level diffing (SetCell) marks only genuinely changed cells dirty,
 // so Flush emits minimal ANSI output even though paint visits every cell.
 //
-// If content's wrapped text (reflow) causes height to expand after initial
-// layout, Render re-measures and re-layouts automatically to propagate the
-// new height to containers.
+// If content's wrapped text or flex-wrap (reflow) causes height to expand
+// after initial layout, Render re-measures and re-layouts automatically to
+// propagate the new height to containers.
 func (r *ComponentRenderer) Render(next Element) {
 	// Step 1: Resolve deferred (size-aware) content BEFORE building real layout tree.
 	// ContentBuilder nodes need their resolved width/height from parent constraints,
@@ -214,9 +217,9 @@ func (r *ComponentRenderer) Render(next Element) {
 	available := Rect{X: 0, Y: 0, Width: availW, Height: availH}
 	rects := ComputeLayout(layoutRoot, available)
 
-	// Step 4b: If reflow callbacks fired (e.g. wrapped text), tree height may have changed.
-	// Re-measure and re-layout to propagate new height to ancestors (containers around
-	// wrapped text must grow to fit).
+	// Step 4b: If reflow callbacks fired (e.g. wrapped text, flex-wrap rows),
+	// tree height may have changed. Re-measure and re-layout to propagate new
+	// height to ancestors (containers around wrapped content must grow to fit).
 	finalH := layoutRoot.intrinsicHeight
 	if finalH > r.screen.Height() {
 		r.screen.Resize(r.screen.Width(), finalH)
@@ -226,8 +229,11 @@ func (r *ComponentRenderer) Render(next Element) {
 	r.screen.Clear()
 
 	// Steps 5-6: Paint main tree and collect overlays for deferred final pass.
+	// rootClip bounds all painting to the physical screen; nodes with
+	// OverflowHidden/OverflowScroll further tighten this per-subtree.
+	rootClip := Rect{X: 0, Y: 0, Width: r.screen.Width(), Height: r.screen.Height()}
 	var pending []pendingOverlay
-	paint(next, rects, 0, r.screen, Style{}, &pending)
+	paint(next, rects, 0, r.screen, Style{}, &pending, rootClip)
 
 	// Second pass: paint overlays LAST, on top of everything.
 	// This ensures overlays never get stamped over by siblings/cousins that
@@ -324,7 +330,7 @@ func resolveDeferred(element Element, availW, availH int) Element {
 // ============================================================================
 
 // buildLayoutTree converts an Element tree to a LayoutNode tree, extracting
-// sizing, padding, border, and gap information.
+// sizing, padding, border, gap, overflow, and wrap information.
 //
 // Element text content (ElementText, ElementMultilineText, ElementMarkdown)
 // is converted to fixed or reflow-based sizing:
@@ -341,6 +347,10 @@ func resolveDeferred(element Element, availW, availH int) Element {
 //
 // Borders are merged into padding (border.Top etc. add 1 to the corresponding
 // padding, since border draws inside the padding region).
+//
+// NOTE: this function reads p.Overflow, p.ScrollX, p.ScrollY, and p.Wrap off
+// LayoutProps. Those fields must exist on LayoutProps (see element.go) for
+// this to compile — see the Overflow/Wrap API section in layout.go.
 func buildLayoutTree(element Element) *LayoutNode {
 	p := element.Layout
 	b := element.Style.border
@@ -375,6 +385,10 @@ func buildLayoutTree(element Element) *LayoutNode {
 		gap:           p.Gap,
 		alignment:     p.Align,
 		justify:       p.Justify,
+		overflow:      p.Overflow,
+		scrollX:       p.ScrollX,
+		scrollY:       p.ScrollY,
+		wrap:          p.Wrap,
 	}
 
 	switch element.Type {
@@ -451,13 +465,22 @@ func buildLayoutTree(element Element) *LayoutNode {
 // rect order) and paints cells to screen. parentStyle is inherited from
 // ancestors; each element merges its own Style onto it.
 //
+// clip is the axis-aligned region cells are allowed to be written into.
+// Every SetCell call anywhere in paint (and in paintBorder) is guarded by
+// inClip(x, y, clip) — this is what makes OverflowHidden/OverflowScroll
+// actually clip visually rather than only affecting layout. clip narrows
+// (via intersectRect) whenever a node's Overflow is not OverflowVisible,
+// and is passed unchanged to children otherwise, so clipping composes
+// correctly through nested scroll regions.
+//
 // Overlay nodes are NOT painted here — they're appended to pending and painted
-// in a final deferred pass (see Render), ensuring overlays never get stamped
-// over by siblings/cousins painted later in tree order.
+// in a final deferred pass (see Render), ensuring overlays always render on
+// the topmost visual layer, clipped independently to the full screen rather
+// than to their trigger's ancestor clip.
 //
 // Returns the index after the last rect consumed, so siblings can continue
 // from the correct position in the rects slice.
-func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle Style, pending *[]pendingOverlay) int {
+func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle Style, pending *[]pendingOverlay, clip Rect) int {
 	rect := rects[idx]
 	idx++
 
@@ -470,27 +493,31 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 		*pending = append(*pending, pendingOverlay{element: element, parentStyle: effective})
 
 	case ElementBox:
-		// Fill rect with background.
+		// Fill rect with background, respecting clip.
 		for x := rect.X; x < rect.X+rect.Width; x++ {
 			for y := rect.Y; y < rect.Y+rect.Height; y++ {
-				screen.SetCell(x, y, ' ', effective)
+				if inClip(x, y, clip) {
+					screen.SetCell(x, y, ' ', effective)
+				}
 			}
 		}
-		paintBorder(screen, rect, effective, element.Style.border)
+		paintBorder(screen, rect, effective, element.Style.border, clip)
 
 	case ElementText:
-		// Paint single line of text.
+		// Paint single line of text, respecting clip.
 		x := rect.X
 		for _, ch := range element.Text {
 			if x >= rect.X+rect.Width {
 				break
 			}
-			screen.SetCell(x, rect.Y, ch, effective)
+			if inClip(x, rect.Y, clip) {
+				screen.SetCell(x, rect.Y, ch, effective)
+			}
 			x += RuneWidth(ch)
 		}
 
 	case ElementMultilineText:
-		// Paint multiple lines (wrapped or raw).
+		// Paint multiple lines (wrapped or raw), respecting clip.
 		var lines []string
 		if element.Wrap {
 			lines = wrappedLines(element.Text, rect.Width)
@@ -507,13 +534,15 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 				if x >= rect.X+rect.Width {
 					break
 				}
-				screen.SetCell(x, y, ch, effective)
+				if inClip(x, y, clip) {
+					screen.SetCell(x, y, ch, effective)
+				}
 				x += RuneWidth(ch)
 			}
 		}
 
 	case ElementMarkdown:
-		// Paint markdown-rendered lines (with inline styling).
+		// Paint markdown-rendered lines (with inline styling), respecting clip.
 		lines := element.Markdown.Lines
 		if element.MarkdownText != "" && rect.Width > 0 {
 			lines = renderMarkdownLines(element.MarkdownText, rect.Width, element.Style)
@@ -528,18 +557,29 @@ func paint(element Element, rects []Rect, idx int, screen *Screen, parentStyle S
 				if x >= rect.X+rect.Width {
 					break
 				}
-				cellStyle := mergeStyles(effective, cell.style)
-				screen.SetCell(x, y, cell.r, cellStyle)
+				if inClip(x, y, clip) {
+					cellStyle := mergeStyles(effective, cell.style)
+					screen.SetCell(x, y, cell.r, cellStyle)
+				}
 				x += RuneWidth(cell.r)
 			}
 		}
+	}
+
+	// Tighten clip for children only when this node opts out of the default
+	// (OverflowVisible) shrink-to-fit behavior. OverflowHidden/OverflowScroll
+	// nodes lay out children at true size (see layout.go) and rely entirely
+	// on this clip to keep overflow from being painted.
+	childClip := clip
+	if element.Layout.Overflow != OverflowVisible {
+		childClip = intersectRect(clip, rect)
 	}
 
 	// Overlay children are deferred (handled in pending above) and do not
 	// participate in the rects traversal here. Skip their idx slots.
 	if element.Type != ElementOverlay {
 		for _, child := range element.Children {
-			idx = paint(child, rects, idx, screen, effective, pending)
+			idx = paint(child, rects, idx, screen, effective, pending, childClip)
 		}
 	} else {
 		// Still need to advance idx past the slots ComputeLayout allocated
@@ -569,6 +609,10 @@ func skipRects(element Element, idx int) int {
 // wrapper Element) so ComputeLayout gives it a fresh rect starting at
 // (OverlayX, OverlayY). This allows overlays to be positioned absolutely
 // independent of the main flow.
+//
+// Painting is clipped to the full screen bounds (an overlay is not clipped
+// by whatever ancestor triggered it — it is, by definition, meant to escape
+// its parent's layout box).
 //
 // Called only from Render's deferred final pass, guaranteeing overlay paint
 // lands on top of the already-completed main tree.
@@ -622,9 +666,15 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 	}
 	rects := ComputeLayout(layoutRoot, available)
 
+	// Overlay clip is the full screen, not the (possibly smaller) available
+	// rect above — available only bounds layout sizing, not painting; a
+	// child that legitimately extends to the screen edge should not be
+	// clipped a second time here.
+	overlayClip := Rect{X: 0, Y: 0, Width: screen.Width(), Height: screen.Height()}
+
 	// Nested overlays get their own pending slice scoped to this call.
 	var nestedPending []pendingOverlay
-	paint(wrapper, rects, 0, screen, parentStyle, &nestedPending)
+	paint(wrapper, rects, 0, screen, parentStyle, &nestedPending, overlayClip)
 	for _, po := range nestedPending {
 		paintOverlayChildren(po.element, screen, po.parentStyle)
 	}
@@ -637,8 +687,12 @@ func paintOverlayChildren(element Element, screen *Screen, parentStyle Style) {
 // Title (if present and non-empty) is centered in the top edge with space
 // padding on both sides; if title is too long, it's truncated.
 //
+// Every cell write is guarded by inClip(x, y, clip), so a border that
+// extends outside an OverflowHidden/OverflowScroll ancestor's bounds is
+// clipped exactly like any other painted content.
+//
 // Does nothing if border has no edges enabled or rect has zero dimensions.
-func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
+func paintBorder(screen *Screen, rect Rect, base Style, b Border, clip Rect) {
 	if !b.Any() || rect.Width == 0 || rect.Height == 0 {
 		return
 	}
@@ -652,11 +706,19 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 	x0, y0 := rect.X, rect.Y
 	x1, y1 := rect.X+rect.Width-1, rect.Y+rect.Height-1
 
+	// set is a small clip-checked SetCell wrapper, used for every border
+	// glyph below so clipping logic lives in exactly one place.
+	set := func(x, y int, r rune, s Style) {
+		if inClip(x, y, clip) {
+			screen.SetCell(x, y, r, s)
+		}
+	}
+
 	// Top edge: draw line, then overlay title if present.
 	if b.Top {
 		// Draw full top line with horizontal character.
 		for x := x0 + 1; x < x1; x++ {
-			screen.SetCell(x, y0, c.Top, bs)
+			set(x, y0, c.Top, bs)
 		}
 
 		// Overlay title text if provided.
@@ -701,7 +763,7 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 				titleStyle := mergeStyles(bs, b.Title.Style)
 
 				for i, r := range runes {
-					screen.SetCell(start+i, y0, r, titleStyle)
+					set(start+i, y0, r, titleStyle)
 				}
 			}
 		}
@@ -710,36 +772,36 @@ func paintBorder(screen *Screen, rect Rect, base Style, b Border) {
 	// Bottom edge
 	if b.Bottom && y1 != y0 {
 		for x := x0 + 1; x < x1; x++ {
-			screen.SetCell(x, y1, c.Bottom, bs)
+			set(x, y1, c.Bottom, bs)
 		}
 	}
 
 	// Left edge
 	if b.Left {
 		for y := y0 + 1; y < y1; y++ {
-			screen.SetCell(x0, y, c.Left, bs)
+			set(x0, y, c.Left, bs)
 		}
 	}
 
 	// Right edge
 	if b.Right && x1 != x0 {
 		for y := y0 + 1; y < y1; y++ {
-			screen.SetCell(x1, y, c.Right, bs)
+			set(x1, y, c.Right, bs)
 		}
 	}
 
 	// Corners
 	if g := cornerGlyph(c.TopLeft, c.Top, c.Left, b.Top, b.Left); g != 0 {
-		screen.SetCell(x0, y0, g, bs)
+		set(x0, y0, g, bs)
 	}
 	if g := cornerGlyph(c.TopRight, c.Top, c.Right, b.Top, b.Right); g != 0 {
-		screen.SetCell(x1, y0, g, bs)
+		set(x1, y0, g, bs)
 	}
 	if g := cornerGlyph(c.BottomLeft, c.Bottom, c.Left, b.Bottom, b.Left); g != 0 {
-		screen.SetCell(x0, y1, g, bs)
+		set(x0, y1, g, bs)
 	}
 	if g := cornerGlyph(c.BottomRight, c.Bottom, c.Right, b.Bottom, b.Right); g != 0 {
-		screen.SetCell(x1, y1, g, bs)
+		set(x1, y1, g, bs)
 	}
 }
 
@@ -760,4 +822,41 @@ func cornerGlyph(cornerChar, hChar, vChar rune, hasH, hasV bool) rune {
 	default:
 		return 0
 	}
+}
+
+// ============================================================================
+// Clipping
+// ============================================================================
+
+// inClip reports whether (x, y) falls within clip. Used as the single
+// gate every paint write passes through, so overflow clipping (see
+// OverflowHidden/OverflowScroll in layout.go) is enforced in one place
+// rather than re-implemented per element type.
+func inClip(x, y int, clip Rect) bool {
+	return x >= clip.X && x < clip.X+clip.Width && y >= clip.Y && y < clip.Y+clip.Height
+}
+
+// intersectRect returns the overlapping region of a and b. Non-overlapping
+// input yields a zero-area Rect, for which inClip always returns false —
+// this is what makes a node whose rect has scrolled entirely out of its
+// own clipped ancestor paint nothing, rather than erroring.
+func intersectRect(a, b Rect) Rect {
+	x0, y0 := max(a.X, b.X), max(a.Y, b.Y)
+	x1, y1 := minInt(a.X+a.Width, b.X+b.Width), minInt(a.Y+a.Height, b.Y+b.Height)
+	if x1 < x0 {
+		x1 = x0
+	}
+	if y1 < y0 {
+		y1 = y0
+	}
+	return Rect{X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}
+}
+
+// minInt returns the smaller of two integers. (layout.go already defines
+// max; minInt is the missing counterpart needed by intersectRect.)
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -42,19 +42,15 @@ type Window struct {
 // CurrentScreenWidth returns the live terminal width from retui core if
 // available (non-zero), falling back to DefaultScreenWidth otherwise.
 func currentScreenWidth() int {
-	if retui.CurrentScreenWidth > 0 {
-		return retui.CurrentScreenWidth
-	}
-	return DefaultScreenWidth
+	w, _ := globalManager.GetScreenSize()
+	return w
 }
 
 // CurrentScreenHeight returns the live terminal height from retui core
 // if available (non-zero), falling back to DefaultScreenHeight otherwise.
 func currentScreenHeight() int {
-	if retui.CurrentScreenHeight > 0 {
-		return retui.CurrentScreenHeight
-	}
-	return DefaultScreenHeight
+	_, h := globalManager.GetScreenSize()
+	return h
 }
 
 // NewWindow creates a new window with given content.
@@ -316,14 +312,17 @@ func (w *Window) ShowTitleBar() bool {
 // ========================================
 // POSITIONING HELPERS
 // ========================================
+
 // Center automatically centers the window using the manager's screen dimensions
+// Center centers the window, shrinking it first if it's larger than the
+// available screen so it always fits fully on-screen.
 func (w *Window) Center() *Window {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	screenWidth, screenHeight := globalManager.GetScreenSize()
+	retui.Infof("recenter: screenW=%d screenH=%d winW=%d winH=%d", screenWidth, screenHeight, w.Width, w.Height)
 
-	// If width or height is 0, set defaults
 	if w.Width == 0 {
 		w.Width = 40
 	}
@@ -331,23 +330,24 @@ func (w *Window) Center() *Window {
 		w.Height = 15
 	}
 
+	// Clamp size to screen BEFORE computing position, so a window
+	// larger than the terminal shrinks to fit instead of getting pinned
+	// to an edge with its far side clipped off-screen.
+	if w.Width > screenWidth {
+		w.Width = screenWidth
+	}
+	if w.Height > screenHeight {
+		w.Height = screenHeight
+	}
+
 	w.X = (screenWidth - w.Width) / 2
 	w.Y = (screenHeight - w.Height) / 2
 
-	// Clamp to 0 when window is larger than screen
 	if w.X < 0 {
 		w.X = 0
 	}
 	if w.Y < 0 {
 		w.Y = 0
-	}
-
-	// Ensure window doesn't overflow the screen (if possible)
-	if w.X+w.Width > screenWidth && w.Width <= screenWidth {
-		w.X = screenWidth - w.Width
-	}
-	if w.Y+w.Height > screenHeight && w.Height <= screenHeight {
-		w.Y = screenHeight - w.Height
 	}
 
 	return w

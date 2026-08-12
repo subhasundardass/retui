@@ -13,11 +13,11 @@ func TestPanelBuilder_Defaults(t *testing.T) {
 	if p.width != retui.Grow(1) {
 		t.Errorf("expected width Grow(1), got %v", p.width)
 	}
-	if p.fixedWidth != 0 {
-		t.Errorf("expected fixedWidth 0, got %d", p.fixedWidth)
+	if p.fixedW != nil {
+		t.Errorf("expected fixedW nil, got %v", p.fixedW)
 	}
-	if p.isFixed {
-		t.Errorf("expected isFixed false, got %v", p.isFixed)
+	if p.fixedH != nil {
+		t.Errorf("expected fixedH nil, got %v", p.fixedH)
 	}
 	if p.contentGap != 0 {
 		t.Errorf("expected contentGap 0, got %d", p.contentGap)
@@ -31,6 +31,9 @@ func TestPanelBuilder_Defaults(t *testing.T) {
 	if len(p.children) != 0 {
 		t.Errorf("expected empty children, got %d", len(p.children))
 	}
+	if p.headerGap != 0 {
+		t.Errorf("expected headerGap 0, got %d", p.headerGap)
+	}
 }
 
 func TestPanelBuilder_Width(t *testing.T) {
@@ -39,8 +42,8 @@ func TestPanelBuilder_Width(t *testing.T) {
 		if p.width != retui.Grow(2) {
 			t.Errorf("expected width Grow(2), got %v", p.width)
 		}
-		if p.isFixed {
-			t.Errorf("expected isFixed false, got %v", p.isFixed)
+		if p.fixedW != nil {
+			t.Errorf("expected fixedW nil, got %v", p.fixedW)
 		}
 	})
 
@@ -49,8 +52,8 @@ func TestPanelBuilder_Width(t *testing.T) {
 		if p.width != retui.Fixed(50) {
 			t.Errorf("expected width Fixed(50), got %v", p.width)
 		}
-		if p.isFixed {
-			t.Errorf("expected isFixed false, got %v", p.isFixed)
+		if p.fixedW != nil {
+			t.Errorf("expected fixedW nil, got %v", p.fixedW)
 		}
 	})
 }
@@ -61,11 +64,8 @@ func TestPanelBuilder_FixedWidth(t *testing.T) {
 		if p.width != retui.Fixed(50) {
 			t.Errorf("expected width Fixed(50), got %v", p.width)
 		}
-		if p.fixedWidth != 50 {
-			t.Errorf("expected fixedWidth 50, got %d", p.fixedWidth)
-		}
-		if !p.isFixed {
-			t.Errorf("expected isFixed true, got %v", p.isFixed)
+		if p.fixedW == nil || *p.fixedW != 50 {
+			t.Errorf("expected fixedW 50, got %v", p.fixedW)
 		}
 	})
 
@@ -74,11 +74,8 @@ func TestPanelBuilder_FixedWidth(t *testing.T) {
 		if p.width != retui.Fixed(0) {
 			t.Errorf("expected width Fixed(0), got %v", p.width)
 		}
-		if p.fixedWidth != 0 {
-			t.Errorf("expected fixedWidth 0, got %d", p.fixedWidth)
-		}
-		if !p.isFixed {
-			t.Errorf("expected isFixed true, got %v", p.isFixed)
+		if p.fixedW == nil || *p.fixedW != 0 {
+			t.Errorf("expected fixedW 0, got %v", p.fixedW)
 		}
 	})
 }
@@ -89,8 +86,8 @@ func TestPanelBuilder_Height(t *testing.T) {
 		if p.height != retui.Grow(1) {
 			t.Errorf("expected height Grow(1), got %v", p.height)
 		}
-		if p.isFixedHeight {
-			t.Errorf("expected isFixedHeight false, got %v", p.isFixedHeight)
+		if p.fixedH != nil {
+			t.Errorf("expected fixedH nil, got %v", p.fixedH)
 		}
 	})
 
@@ -99,8 +96,8 @@ func TestPanelBuilder_Height(t *testing.T) {
 		if p.height != retui.Fixed(30) {
 			t.Errorf("expected height Fixed(30), got %v", p.height)
 		}
-		if p.isFixedHeight {
-			t.Errorf("expected isFixedHeight false, got %v", p.isFixedHeight)
+		if p.fixedH != nil {
+			t.Errorf("expected fixedH nil, got %v", p.fixedH)
 		}
 	})
 }
@@ -111,11 +108,8 @@ func TestPanelBuilder_FixedHeight(t *testing.T) {
 		if p.height != retui.Fixed(30) {
 			t.Errorf("expected height Fixed(30), got %v", p.height)
 		}
-		if p.fixedHeight != 30 {
-			t.Errorf("expected fixedHeight 30, got %d", p.fixedHeight)
-		}
-		if !p.isFixedHeight {
-			t.Errorf("expected isFixedHeight true, got %v", p.isFixedHeight)
+		if p.fixedH == nil || *p.fixedH != 30 {
+			t.Errorf("expected fixedH 30, got %v", p.fixedH)
 		}
 	})
 
@@ -124,11 +118,8 @@ func TestPanelBuilder_FixedHeight(t *testing.T) {
 		if p.height != retui.Fixed(0) {
 			t.Errorf("expected height Fixed(0), got %v", p.height)
 		}
-		if p.fixedHeight != 0 {
-			t.Errorf("expected fixedHeight 0, got %d", p.fixedHeight)
-		}
-		if !p.isFixedHeight {
-			t.Errorf("expected isFixedHeight true, got %v", p.isFixedHeight)
+		if p.fixedH == nil || *p.fixedH != 0 {
+			t.Errorf("expected fixedH 0, got %v", p.fixedH)
 		}
 	})
 }
@@ -155,6 +146,22 @@ func TestPanelBuilder_Header(t *testing.T) {
 		}
 		if !reflect.DeepEqual(p.header, header) {
 			t.Error("Header not set correctly")
+		}
+	})
+}
+
+func TestPanelBuilder_HeaderGap(t *testing.T) {
+	t.Run("sets HeaderGap correctly", func(t *testing.T) {
+		p := Panel().HeaderGap(2)
+		if p.headerGap != 2 {
+			t.Errorf("expected headerGap 2, got %d", p.headerGap)
+		}
+	})
+
+	t.Run("sets HeaderGap to 0", func(t *testing.T) {
+		p := Panel().HeaderGap(0)
+		if p.headerGap != 0 {
+			t.Errorf("expected headerGap 0, got %d", p.headerGap)
 		}
 	})
 }
@@ -204,6 +211,13 @@ func TestPanelBuilder_Children(t *testing.T) {
 			t.Error("Child not set correctly")
 		}
 	})
+
+	t.Run("handles nil children", func(t *testing.T) {
+		p := Panel().Children()
+		if len(p.children) != 0 {
+			t.Errorf("expected 0 children, got %d", len(p.children))
+		}
+	})
 }
 
 func TestPanelBuilder_Divider(t *testing.T) {
@@ -216,6 +230,13 @@ func TestPanelBuilder_Divider(t *testing.T) {
 
 	t.Run("adds Divider with FixedWidth", func(t *testing.T) {
 		p := Panel().FixedWidth(20).Divider()
+		if len(p.children) != 1 {
+			t.Errorf("expected 1 child, got %d", len(p.children))
+		}
+	})
+
+	t.Run("Divider handles negative FixedWidth", func(t *testing.T) {
+		p := Panel().FixedWidth(-5).Divider()
 		if len(p.children) != 1 {
 			t.Errorf("expected 1 child, got %d", len(p.children))
 		}
@@ -240,6 +261,13 @@ func TestPanelBuilder_DividerWithText(t *testing.T) {
 	t.Run("handles long text in DividerWithText", func(t *testing.T) {
 		longText := "This is a very long section title that should be truncated"
 		p := Panel().FixedWidth(10).DividerWithText(longText)
+		if len(p.children) != 1 {
+			t.Errorf("expected 1 child, got %d", len(p.children))
+		}
+	})
+
+	t.Run("DividerWithText with empty text", func(t *testing.T) {
+		p := Panel().FixedWidth(20).DividerWithText("")
 		if len(p.children) != 1 {
 			t.Errorf("expected 1 child, got %d", len(p.children))
 		}
@@ -281,6 +309,15 @@ func TestPanelRender(t *testing.T) {
 		}
 	})
 
+	t.Run("renders with header gap", func(t *testing.T) {
+		header := retui.Text("Header", retui.NewStyle())
+		p := Panel().Header(header).HeaderGap(2)
+		elem := p.Render()
+		if elem.Type != retui.ElementBox {
+			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
+		}
+	})
+
 	t.Run("renders with children", func(t *testing.T) {
 		child := retui.Text("Child", retui.NewStyle())
 		p := Panel().Children(child)
@@ -300,6 +337,14 @@ func TestPanelRender(t *testing.T) {
 
 	t.Run("renders with FixedHeight", func(t *testing.T) {
 		p := Panel().FixedHeight(20)
+		elem := p.Render()
+		if elem.Type != retui.ElementBox {
+			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
+		}
+	})
+
+	t.Run("renders with FixedWidth and FixedHeight", func(t *testing.T) {
+		p := Panel().FixedWidth(30).FixedHeight(20)
 		elem := p.Render()
 		if elem.Type != retui.ElementBox {
 			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
@@ -335,25 +380,20 @@ func TestPanelChaining(t *testing.T) {
 		FixedHeight(30).
 		Style(style).
 		Header(header).
+		HeaderGap(1).
 		ContentGap(2).
 		Children(child).
 		Divider().
 		DividerWithText("Section")
 
 	// Check that FixedWidth overrides Width
-	if p.fixedWidth != 50 {
-		t.Errorf("expected fixedWidth 50, got %d", p.fixedWidth)
-	}
-	if !p.isFixed {
-		t.Errorf("expected isFixed true, got %v", p.isFixed)
+	if p.fixedW == nil || *p.fixedW != 50 {
+		t.Errorf("expected fixedW 50, got %v", p.fixedW)
 	}
 
 	// Check that FixedHeight overrides Height
-	if p.fixedHeight != 30 {
-		t.Errorf("expected fixedHeight 30, got %d", p.fixedHeight)
-	}
-	if !p.isFixedHeight {
-		t.Errorf("expected isFixedHeight true, got %v", p.isFixedHeight)
+	if p.fixedH == nil || *p.fixedH != 30 {
+		t.Errorf("expected fixedH 30, got %v", p.fixedH)
 	}
 
 	if p.style == nil {
@@ -367,6 +407,9 @@ func TestPanelChaining(t *testing.T) {
 	}
 	if !reflect.DeepEqual(p.header, header) {
 		t.Error("Header not set correctly")
+	}
+	if p.headerGap != 1 {
+		t.Errorf("expected headerGap 1, got %d", p.headerGap)
 	}
 	if p.contentGap != 2 {
 		t.Errorf("expected contentGap 2, got %d", p.contentGap)
@@ -392,6 +435,12 @@ func TestPanelHelperFunctions(t *testing.T) {
 				retui.Text("Line 1", retui.NewStyle()),
 				retui.Text("Line 2", retui.NewStyle()),
 			), 2},
+			{"Box with Row direction", retui.Box(
+				retui.Props{Direction: retui.Row},
+				retui.NewStyle(),
+				retui.Text("Hello", retui.NewStyle()),
+				retui.Text("World", retui.NewStyle()),
+			), 1},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -402,7 +451,7 @@ func TestPanelHelperFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("buildVerticalBorder builds vertical border correctly", func(t *testing.T) {
+	t.Run("buildBorderCol builds vertical border correctly", func(t *testing.T) {
 		style := retui.NewStyle().Foreground(retui.Cyan)
 
 		tests := []struct {
@@ -413,9 +462,10 @@ func TestPanelHelperFunctions(t *testing.T) {
 			{"│", 1, 1},
 			{"│", 3, 3},
 			{"│", 5, 5},
+			{"║", 2, 2},
 		}
 		for _, tt := range tests {
-			elem := buildVerticalBorder(tt.ch, style, tt.height)
+			elem := buildBorderCol(tt.ch, style, tt.height)
 			if tt.height == 1 {
 				if elem.Type != retui.ElementText {
 					t.Errorf("expected ElementText for height 1, got %v", elem.Type)
@@ -427,22 +477,31 @@ func TestPanelHelperFunctions(t *testing.T) {
 				if len(elem.Children) != tt.want {
 					t.Errorf("expected %d children, got %d", tt.want, len(elem.Children))
 				}
+				// Check that all children are Text elements
+				for i, child := range elem.Children {
+					if child.Type != retui.ElementText {
+						t.Errorf("child %d expected ElementText, got %v", i, child.Type)
+					}
+					if child.Text != tt.ch {
+						t.Errorf("child %d expected text %q, got %q", i, tt.ch, child.Text)
+					}
+				}
 			}
 		}
 	})
 
-	t.Run("getBorderStyle returns default style when nil", func(t *testing.T) {
+	t.Run("borderStyle returns default style when nil", func(t *testing.T) {
 		p := Panel()
-		style := p.getBorderStyle()
+		style := p.borderStyle()
 		if reflect.DeepEqual(style, retui.Style{}) {
 			t.Error("expected non-empty default style")
 		}
 	})
 
-	t.Run("getBorderStyle returns custom style when set", func(t *testing.T) {
+	t.Run("borderStyle returns custom style when set", func(t *testing.T) {
 		customStyle := retui.NewStyle().Foreground(retui.Cyan).Bold(true)
 		p := Panel().Style(customStyle)
-		style := p.getBorderStyle()
+		style := p.borderStyle()
 		if !reflect.DeepEqual(style, customStyle) {
 			t.Error("expected custom style")
 		}
@@ -508,11 +567,36 @@ func TestPanelEdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("handles HeaderGap with no header", func(t *testing.T) {
+		p := Panel().HeaderGap(2)
+		elem := p.Render()
+		if elem.Type != retui.ElementBox {
+			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
+		}
+	})
+
 	t.Run("handles FixedHeight with content overflow", func(t *testing.T) {
 		p := Panel().FixedHeight(5)
 		for i := 0; i < 10; i++ {
 			p = p.Children(retui.Text("Line "+string(rune('A'+i)), retui.NewStyle()))
 		}
+		elem := p.Render()
+		if elem.Type != retui.ElementBox {
+			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
+		}
+	})
+
+	t.Run("handles FixedHeight with exact content fit", func(t *testing.T) {
+		p := Panel().FixedHeight(3)
+		p = p.Children(retui.Text("Line 1", retui.NewStyle()))
+		elem := p.Render()
+		if elem.Type != retui.ElementBox {
+			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
+		}
+	})
+
+	t.Run("handles FixedHeight with no content", func(t *testing.T) {
+		p := Panel().FixedHeight(5)
 		elem := p.Render()
 		if elem.Type != retui.ElementBox {
 			t.Errorf("expected Element of type ElementBox, got %v", elem.Type)
@@ -544,6 +628,18 @@ func BenchmarkPanelRenderLarge(b *testing.B) {
 	p := Panel().FixedWidth(80).FixedHeight(50)
 	for i := 0; i < 20; i++ {
 		p = p.Children(retui.Text("Line "+string(rune('A'+i%26)), retui.NewStyle()))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.Render()
+	}
+}
+
+func BenchmarkPanelRenderNoFixedSize(b *testing.B) {
+	p := Panel()
+	for i := 0; i < 10; i++ {
+		p = p.Children(retui.Text("Line "+string(rune('A'+i)), retui.NewStyle()))
 	}
 
 	b.ResetTimer()

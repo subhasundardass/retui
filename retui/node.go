@@ -273,6 +273,23 @@ type Props struct {
 	// Height sizing for this element (legacy; prefer Element.Layout.HeightSizing).
 	// Zero value is Fixed(0); use NewProps() for sensible defaults.
 	Height Sizing
+
+	// Overflow controls how children exceeding this element's bounds are
+	// handled. Default (zero value) is OverflowVisible — RetUI's original
+	// shrink-to-fit behavior, unchanged for backward compatibility.
+	Overflow Overflow
+
+	// ScrollX, ScrollY are the scroll offsets (in cells), applied when
+	// Overflow is OverflowScroll. Ignored otherwise. Drive these from your
+	// own app state/hooks (e.g. updated on arrow-key input).
+	ScrollX int
+	ScrollY int
+
+	// Wrap enables flex-wrap for a Row-direction element — children flow
+	// left to right and wrap onto a new line when the next child would
+	// exceed available width. See LayoutNode.WithWrap for full semantics.
+	Wrap bool
+
 	// Values is a map for custom hook properties (application state).
 	// Accessible via Props.Get(key) or Values[key] directly.
 	Values map[string]any
@@ -305,6 +322,7 @@ func NewProps() Props {
 	return Props{
 		Width:  Fit(),
 		Height: Fit(),
+		Wrap:   true,
 		Values: make(map[string]any),
 	}
 }
@@ -540,4 +558,19 @@ type LayoutProps struct {
 	Align Alignment
 	// Justify controls space distribution along main axis.
 	Justify Justify
+
+	// Overflow controls how children exceeding this node's bounds are
+	// handled. Default (zero value) is OverflowVisible — RetUI's original
+	// shrink-to-fit behavior, unchanged for backward compatibility.
+	Overflow Overflow
+
+	// ScrollX, ScrollY are the scroll offsets (in cells) applied when
+	// Overflow is OverflowScroll. Ignored otherwise.
+	ScrollX int
+	ScrollY int
+
+	// Wrap enables flex-wrap for a Row-direction node — children flow left
+	// to right and wrap onto a new line when the next child would exceed
+	// available width. See LayoutNode.WithWrap for full semantics/limits.
+	Wrap bool
 }
