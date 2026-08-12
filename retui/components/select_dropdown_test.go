@@ -574,17 +574,14 @@ func TestSelectEdgeCases(t *testing.T) {
 	})
 
 	t.Run("handles negative width gracefully", func(t *testing.T) {
-		// Negative width causes panic in truncateText
-		// We recover and test that it panics as expected
 		defer func() {
 			if r := recover(); r != nil {
-				// Expected panic for negative width
-				t.Log("SelectDropdown panicked with negative width as expected")
+				t.Errorf("SelectDropdown panicked with negative width: %v", r)
 			}
 		}()
+
 		s := SelectDropdown().Width(-5)
 		s.Render()
-		t.Error("Expected panic but didn't get one")
 	})
 
 	t.Run("handles negative height gracefully", func(t *testing.T) {
@@ -644,12 +641,12 @@ func TestSelectEdgeCases(t *testing.T) {
 	t.Run("handles width less than 2", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Log("SelectDropdown panicked with width 1 as expected")
+				t.Errorf("SelectDropdown panicked with width 1: %v", r)
 			}
 		}()
+
 		s := SelectDropdown().Width(1)
 		s.Render()
-		t.Error("Expected panic but didn't get one")
 	})
 }
 

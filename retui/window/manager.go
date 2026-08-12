@@ -16,8 +16,12 @@ type WindowManager struct {
 	modalStack    []string // modal IDs in order (bottom → top)
 	focused       string   // Currently focused window ID
 	renderTrigger func()   // Callback to trigger re-renders in retui
-	screenWidth   int
-	screenHeight  int
+	// screenWidth/screenHeight are an EXPLICIT OVERRIDE only. Zero (the
+	// default) means "not overridden" — GetScreenSize falls through to the
+	// live terminal size via retui.StdOutScreen(). Call SetScreenSize only
+	// for headless/test environments where there is no real terminal.
+	screenWidthOverride  int
+	screenHeightOverride int
 }
 
 // NewWindowManager creates a new window manager instance.
@@ -28,8 +32,6 @@ func NewWindowManager() *WindowManager {
 		modalStack:    make([]string, 0),
 		focused:       "",
 		renderTrigger: nil,
-		screenWidth:   DefaultScreenWidth,
-		screenHeight:  DefaultScreenHeight,
 	}
 }
 
@@ -101,15 +103,30 @@ func init() {
 func (wm *WindowManager) SetScreenSize(width, height int) {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
-	wm.screenWidth = width
-	wm.screenHeight = height
+	wm.screenWidthOverride = width
+	wm.screenHeightOverride = height
 }
 
-// GetScreenSize returns current screen dimensions
+// GetScreenSize returns the dimensions windows should center against.
+//
+// If an explicit override was set via SetScreenSize, that value is used.
+// Otherwise this queries the live terminal size directly from retui's
+// screen, so it always reflects the current size even after a resize —
+// no cache to go stale, no manual sync step required.
 func (wm *WindowManager) GetScreenSize() (int, int) {
 	wm.mu.RLock()
-	defer wm.mu.RUnlock()
-	return wm.screenWidth, wm.screenHeight
+	ow, oh := wm.screenWidthOverride, wm.screenHeightOverride
+	wm.mu.RUnlock()
+
+	if ow > 0 && oh > 0 {
+		return ow, oh
+	}
+
+	if retui.CurrentScreenWidth > 0 && retui.CurrentScreenHeight > 0 {
+		return retui.CurrentScreenWidth, retui.CurrentScreenHeight
+	}
+
+	return DefaultScreenWidth, DefaultScreenHeight
 }
 
 // SetRenderTrigger sets the callback function that triggers re-renders.
@@ -342,8 +359,8 @@ func (wm *WindowManager) FocusNext() {
 // SetScreenSize sets the screen dimensions globally
 func SetScreenSize(width, height int) {
 	globalManager.SetScreenSize(width, height)
-	DefaultScreenWidth = width
-	DefaultScreenHeight = height
+	retui.Infof("Screen Width: %v", width)
+
 }
 
 // GetScreenSize returns the current global screen dimensions

@@ -605,15 +605,15 @@ render:
 		}
 	}
 
-	bracketStyle := retui.NewStyle()
-	if focused {
-		bracketStyle = bracketStyle.
-			Foreground(borderColor).
-			Bold(true)
-	} else {
-		bracketStyle = bracketStyle.
-			Foreground(retui.BrightBlack)
-	}
+	// bracketStyle := retui.NewStyle()
+	// if focused {
+	// 	bracketStyle = bracketStyle.
+	// 		Foreground(borderColor).
+	// 		Bold(true)
+	// } else {
+	// 	bracketStyle = bracketStyle.
+	// 		Foreground(retui.BrightBlack)
+	// }
 
 	prefixStyle := retui.NewStyle().Foreground(retui.BrightBlack)
 	suffixStyle := retui.NewStyle().Foreground(retui.BrightBlack)

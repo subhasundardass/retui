@@ -140,6 +140,21 @@ type LayoutNode struct {
 	// justify controls space distribution along the main axis.
 	justify Justify
 
+	// Overflow
+	overflow Overflow
+	scrollX  int
+	scrollY  int
+
+	// Wrap enables flex-wrap for a Row-direction node — children flow left
+	// to right and wrap onto a new line when the next child would exceed
+	// available width. See LayoutNode.WithWrap for full semantics/limits.
+	wrap bool
+
+	// contentMainSize is the true (unclamped) main-axis extent this node's
+	// children actually claim, recomputed every layout() call. Meaningful
+	// once ComputeLayout has run at least once; read via ContentSize().
+	contentMainSize int
+
 	// reflow is an optional callback for content whose cross-axis dimension affects
 	// its main-axis size (e.g. wrapped text where height depends on width).
 	// Called during layout once the node's cross-axis size is known.
@@ -148,6 +163,40 @@ type LayoutNode struct {
 	// Return value is the new main-axis size; the node's intrinsic dimension is updated.
 	// Return value should be clamped to [0, available]; clamping is not automatic.
 	reflow func(crossAxisSize int) int
+}
+
+// Overflow controls how a node's children that exceed its bounds are
+// handled during layout and painting.
+type Overflow int
+
+const (
+	// OverflowVisible (default) preserves RetUI's original behavior:
+	// Fixed/Fit children are clamped (shrunk) to fit remaining main-axis
+	// space. This is kept as the default purely for backward compatibility
+	// with existing layouts that depend on the shrink-to-fit clamp — it is
+	// NOT the CSS "visible" behavior of letting content spill out unclipped.
+	OverflowVisible Overflow = iota
+
+	// OverflowHidden lets children lay out at their natural (unclamped)
+	// size, even past the parent's bounds. Anything outside the parent's
+	// rect is simply not painted.
+	OverflowHidden
+
+	// OverflowScroll behaves like OverflowHidden, and additionally shifts
+	// children by ScrollX/ScrollY before clipping — use with ContentSize()
+	// to compute a valid scroll range for scrollbars or key handling.
+	OverflowScroll
+)
+
+// clampInt bounds v to [lo, hi].
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // NewLayout creates a new, empty LayoutNode with default settings:
@@ -160,10 +209,43 @@ func NewLayout() *LayoutNode {
 	return &LayoutNode{}
 }
 
+// WithOverflow sets how children exceeding this node's bounds are handled.
+// Default is OverflowVisible (shrink-to-fit, existing behavior).
+func (l *LayoutNode) WithOverflow(o Overflow) *LayoutNode {
+	l.overflow = o
+	return l
+}
+
+// WithScroll sets the scroll offset (in cells) for an OverflowScroll node.
+// Ignored otherwise. Values are clamped to a valid range automatically.
+func (l *LayoutNode) WithScroll(x, y int) *LayoutNode {
+	l.scrollX = x
+	l.scrollY = y
+	return l
+}
+
+// ContentSize returns this node's true (unclamped) main-axis content
+// extent, as of the last ComputeLayout call. Zero before the first call.
+// Use to compute scroll range: maxScroll := max(0, node.ContentSize()-visible).
+func (l *LayoutNode) ContentSize() int {
+	return l.contentMainSize
+}
+
 // WithDirection sets the layout direction and returns the node for chaining.
 // Direction is the primary axis along which children are arranged.
 func (l *LayoutNode) WithDirection(dir Direction) *LayoutNode {
 	l.Direction = dir
+	return l
+}
+
+// WithWrap enables flex-wrap for a Row-direction node: children flow left
+// to right and wrap onto a new line when the next child would exceed the
+// available width. Fixed/Fit/Percent children only — Grow is not supported
+// inside a wrapped container (its meaning across multiple lines is
+// ambiguous) and is treated as zero-width. Column-direction wrap is not
+// yet supported; setting Wrap on a Column node is a no-op.
+func (l *LayoutNode) WithWrap(wrap bool) *LayoutNode {
+	l.wrap = wrap
 	return l
 }
 
@@ -366,7 +448,7 @@ func ComputeLayout(root *LayoutNode, available Rect) []Rect {
 // hasReflow checks if this node or any descendant has a reflow callback.
 // Used to determine if a second measure+layout pass is needed.
 func hasReflow(n *LayoutNode) bool {
-	if n.reflow != nil {
+	if n.reflow != nil || n.wrap {
 		return true
 	}
 	for _, c := range n.Children {
@@ -452,7 +534,7 @@ func measure(n *LayoutNode) (int, int) {
 		height += n.paddingTop + n.paddingBottom
 	}
 
-	if n.reflow != nil && n.intrinsicHeight > height {
+	if (n.reflow != nil || n.wrap) && n.intrinsicHeight > height {
 		height = n.intrinsicHeight
 	}
 
@@ -688,6 +770,10 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 	if len(n.Children) == 0 {
 		return
 	}
+	if n.wrap && n.Direction == Row {
+		layoutWrapRow(n, into, out)
+		return
+	}
 
 	innerMainSize := mainSize(into, n.Direction)
 	totalGap := n.gap * (len(n.Children) - 1)
@@ -717,8 +803,11 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		if n.Direction == Row {
 			switch child.WidthSizing.Mode {
 			case SizingFixed, SizingFit:
-				cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
-				childRect.Width = clampMax(child.intrinsicWidth, cap)
+				childRect.Width = child.intrinsicWidth
+				if n.overflow == OverflowVisible {
+					cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
+					childRect.Width = clampMax(child.intrinsicWidth, cap)
+				}
 				usedMainAxis += childRect.Width
 			case SizingPercent:
 				childRect.Width = innerMainSize * child.WidthSizing.Value / 100
@@ -730,8 +819,11 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		} else {
 			switch child.HeightSizing.Mode {
 			case SizingFixed, SizingFit:
-				cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
-				childRect.Height = clampMax(child.intrinsicHeight, cap)
+				childRect.Height = child.intrinsicHeight
+				if n.overflow == OverflowVisible {
+					cap := max(innerMainSize-totalGap-totalMainMargin-usedMainAxis, 0)
+					childRect.Height = clampMax(child.intrinsicHeight, cap)
+				}
 				usedMainAxis += childRect.Height
 			case SizingPercent:
 				childRect.Height = innerMainSize * child.HeightSizing.Value / 100
@@ -787,6 +879,7 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 	for _, childRect := range childRects {
 		usedMain += mainSize(childRect, n.Direction)
 	}
+	n.contentMainSize = usedMain // true content extent, read by ContentSize()
 
 	cursor, gap := resolveJustify(
 		n.justify,
@@ -796,6 +889,15 @@ func layout(n *LayoutNode, into Rect, out *[]Rect) {
 		n.gap,
 		len(n.Children),
 	)
+
+	if n.overflow == OverflowScroll {
+		maxScroll := max(n.contentMainSize-innerMainSize, 0)
+		off := n.scrollX
+		if n.Direction != Row {
+			off = n.scrollY
+		}
+		cursor -= clampInt(off, 0, maxScroll)
+	}
 
 	for i, child := range n.Children {
 		childRect := childRects[i]
@@ -830,4 +932,101 @@ func clampMax(v, max int) int {
 		return max
 	}
 	return v
+}
+
+// layoutWrapRow lays out a Row node's children across multiple lines,
+// wrapping whenever the next child would exceed the available width. Each
+// line is justified independently per n.justify; children are aligned
+// within their line's height per n.alignment (Stretch/Start/Center/End).
+//
+// Only Fixed/Fit/Percent-width children are supported; Grow children are
+// treated as zero-width (their meaning across multiple wrapped lines is
+// not well-defined, same as CSS flex-wrap + flex-grow interactions).
+//
+// Sets n.intrinsicHeight when n.HeightSizing is SizingFit, so a Fit-height
+// ancestor grows to fit all wrapped lines (picked up by hasReflow's second
+// pass, same mechanism as text reflow).
+func layoutWrapRow(n *LayoutNode, into Rect, out *[]Rect) {
+	innerWidth := max(into.Width, 0)
+
+	type lineItem struct {
+		child *LayoutNode
+		w, h  int
+	}
+
+	var lines [][]lineItem
+	var current []lineItem
+	currentW := 0
+
+	for _, child := range n.Children {
+		w := child.intrinsicWidth
+		if child.WidthSizing.Mode == SizingPercent {
+			w = innerWidth * child.WidthSizing.Value / 100
+		}
+		if w > innerWidth {
+			w = innerWidth // a single item wider than the container still gets its own line
+		}
+		h := child.intrinsicHeight
+
+		span := w
+		if len(current) > 0 {
+			span += n.gap
+		}
+		if len(current) > 0 && currentW+span > innerWidth {
+			lines = append(lines, current)
+			current = nil
+			currentW = 0
+			span = w
+		}
+
+		current = append(current, lineItem{child: child, w: w, h: h})
+		currentW += span
+	}
+	if len(current) > 0 {
+		lines = append(lines, current)
+	}
+
+	cursorY := into.Y
+	totalHeight := 0
+
+	for li, line := range lines {
+		lineHeight := 0
+		usedW := 0
+		for i, it := range line {
+			if it.h > lineHeight {
+				lineHeight = it.h
+			}
+			usedW += it.w
+			if i > 0 {
+				usedW += n.gap
+			}
+		}
+
+		cursorX, gap := resolveJustify(n.justify, into.X, innerWidth, usedW, n.gap, len(line))
+
+		for _, it := range line {
+			childRect := Rect{X: cursorX, Y: cursorY, Width: it.w, Height: it.h}
+			switch n.alignment {
+			case AlignStretch:
+				childRect.Height = lineHeight
+			case AlignCenter:
+				childRect.Y = cursorY + (lineHeight-it.h)/2
+			case AlignEnd:
+				childRect.Y = cursorY + lineHeight - it.h
+			}
+			layout(it.child, childRect, out)
+			cursorX += it.w + gap
+		}
+
+		cursorY += lineHeight
+		totalHeight += lineHeight
+		if li < len(lines)-1 {
+			cursorY += n.gap
+			totalHeight += n.gap
+		}
+	}
+
+	if n.HeightSizing.Mode == SizingFit {
+		n.intrinsicHeight = totalHeight + n.paddingTop + n.paddingBottom
+	}
 }

@@ -10,16 +10,16 @@ import (
 func TestNewApp(t *testing.T) {
 	app := NewApp(80, 24)
 	if app == nil {
-		t.Error("NewApp returned nil")
+		t.Fatal("NewApp returned nil")
 	}
 	if app.screen == nil {
-		t.Error("App.screen is nil")
+		t.Fatal("App.screen is nil")
 	}
 	if app.focus == nil {
 		t.Error("App.focus is nil")
 	}
 	if app.renderer == nil {
-		t.Error("App.renderer is nil")
+		t.Fatal("App.renderer is nil")
 	}
 }
 

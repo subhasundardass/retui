@@ -73,6 +73,26 @@ func (n *ScreenStack) PushScreen(screenID string, params ScreenParams) {
 	n.currentPage = route
 }
 
+// Returns: The ID of the current screen after the operation.
+func (n *ScreenStack) PopTo(id string) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	for i := len(n.stack) - 1; i >= 0; i-- {
+		if n.stack[i].ID == id {
+			n.stack = n.stack[:i+1]
+			n.currentPage = n.stack[i]
+			return n.currentPage.ID
+		}
+	}
+
+	if len(n.stack) == 0 {
+		return ""
+	}
+
+	return n.currentPage.ID
+}
+
 // PopScreen removes the top screen.
 //
 // The root screen cannot be removed.
@@ -242,6 +262,18 @@ func PopScreen() string {
 	return top
 }
 
+// PopTo
+func PopTo(id string) string {
+	before := globalScreens.Current()
+	top := globalScreens.PopTo(id)
+
+	if before != top {
+		onScreenChanged()
+	}
+
+	return top
+}
+
 // ReplaceScreen replaces the current screen.
 func ReplaceScreen(id string, params ...ScreenParams) {
 	var p ScreenParams
@@ -267,6 +299,13 @@ func CurrentScreen() string {
 
 // CurrentScreenParams returns the parameters associated with the
 // currently active screen.
+// params := retui.CurrentScreenParams()
+//
+//	if params != nil {
+//		if id, ok := params["ledgerID"].(int); ok {
+//			ledgerID = id
+//		}
+//	}
 func CurrentScreenParams() ScreenParams {
 	return globalScreens.CurrentParams()
 }

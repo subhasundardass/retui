@@ -181,7 +181,9 @@ func makeGrid(width, height int) [][]Cell {
 //	defer s.Stop()
 func (s *Screen) Start() {
 	// Full clear including scrollback (3J)
-	fmt.Fprint(s.out, "\033[H\033[2J\033[3J")
+	if _, err := fmt.Fprint(s.out, "\033[H\033[2J\033[3J"); err != nil {
+		Errorf("retui: recovered panic in effect: %v", err)
+	}
 
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err == nil {
@@ -205,8 +207,8 @@ func (s *Screen) Start() {
 
 	s.anchorRow = 1
 
-	fmt.Fprint(s.out, "\033[?25l")   // hide cursor
-	fmt.Fprint(s.out, "\033[?2004h") // bracketed paste on
+	_, _ = fmt.Fprint(s.out, "\033[?25l")   // hide cursor
+	_, _ = fmt.Fprint(s.out, "\033[?2004h") // bracketed paste on
 }
 
 // Stop restores the terminal to its original state.
@@ -217,9 +219,9 @@ func (s *Screen) Start() {
 //
 //	defer s.Stop()
 func (s *Screen) Stop() {
-	fmt.Fprint(s.out, "\033[?2004l") // bracketed paste off
-	fmt.Fprint(s.out, "\033[?25h")   // show cursor
-	fmt.Fprint(s.out, "\033[0m")     // reset attributes
+	_, _ = fmt.Fprint(s.out, "\033[?2004l") // bracketed paste off
+	_, _ = fmt.Fprint(s.out, "\033[?25h")   // show cursor
+	_, _ = fmt.Fprint(s.out, "\033[0m")     // reset attributes
 	if s.oldState != nil {
 		if err := term.Restore(int(os.Stdin.Fd()), s.oldState); err != nil {
 			log.Printf("retui: failed to restore terminal: %v", err)
@@ -262,7 +264,7 @@ func (s *Screen) HandleResize() {
 	s.mu.Unlock()
 
 	// Single clear after resize
-	fmt.Fprint(s.out, "\033[H\033[2J\033[3J")
+	_, _ = fmt.Fprint(s.out, "\033[H\033[2J\033[3J")
 	s.ForceMarkAllDirty()
 }
 
@@ -471,13 +473,13 @@ func (s *Screen) Flush() {
 
 			// Reposition cursor only when needed
 			if cursorRow != absRow || cursorCol != x {
-				fmt.Fprintf(buf, "\033[%d;%dH", absRow, x+1)
+				_, _ = fmt.Fprintf(buf, "\033[%d;%dH", absRow, x+1)
 				cursorRow, cursorCol = absRow, x
 			}
 
 			// Emit style prefix only on change
 			if !styleActive || curr.Style != currentStyle {
-				fmt.Fprint(buf, curr.Style.ANSIPrefix())
+				_, _ = fmt.Fprint(buf, curr.Style.ANSIPrefix())
 				currentStyle = curr.Style
 				styleActive = true
 			}
@@ -486,7 +488,7 @@ func (s *Screen) Flush() {
 			if r == 0 {
 				r = ' '
 			}
-			fmt.Fprint(buf, string(r))
+			_, _ = fmt.Fprint(buf, string(r))
 
 			w := runewidth.RuneWidth(r)
 			if w == 0 {
@@ -499,7 +501,7 @@ func (s *Screen) Flush() {
 	}
 
 	if styleActive {
-		fmt.Fprint(buf, "\033[0m")
+		_, _ = fmt.Fprint(buf, "\033[0m")
 	}
 
 	_ = buf.Flush() // single syscall per frame
@@ -531,7 +533,7 @@ func (s *Screen) EnsureRoom(contentH int) {
 	}
 
 	buf := bufio.NewWriterSize(s.out, 16384)
-	fmt.Fprintf(buf, "\033[%d;1H", topRow)
+	_, _ = fmt.Fprintf(buf, "\033[%d;1H", topRow)
 
 	startY := 0
 	if s.anchorRow < 1 {
@@ -546,9 +548,9 @@ func (s *Screen) EnsureRoom(contentH int) {
 			cell := s.cells[y][x]
 			if !styleActive || cell.Style != prevStyle {
 				if styleActive {
-					fmt.Fprint(buf, "\033[0m")
+					_, _ = fmt.Fprint(buf, "\033[0m")
 				}
-				fmt.Fprint(buf, cell.Style.ANSIPrefix())
+				_, _ = fmt.Fprint(buf, cell.Style.ANSIPrefix())
 				prevStyle = cell.Style
 				styleActive = true
 			}
@@ -556,7 +558,7 @@ func (s *Screen) EnsureRoom(contentH int) {
 			if r == 0 {
 				r = ' '
 			}
-			fmt.Fprint(buf, string(r))
+			_, _ = fmt.Fprint(buf, string(r))
 		}
 
 		if styleActive {

@@ -442,9 +442,10 @@ func markdownListPrefix(block markdownBlock) string {
 	if block.ordered {
 		prefix = strconv.Itoa(block.number) + ". "
 	}
-	if block.task == 0 {
+	switch block.task {
+	case 0:
 		prefix += "[ ] "
-	} else if block.task == 1 {
+	case 1:
 		prefix += "[x] "
 	}
 	return prefix

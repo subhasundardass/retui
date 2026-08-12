@@ -55,6 +55,11 @@ func Box(props Props, style Style, children ...Element) Element {
 
 			Align:   props.Align,
 			Justify: props.Justify,
+
+			Overflow: props.Overflow,
+			ScrollX:  props.ScrollX,
+			ScrollY:  props.ScrollY,
+			Wrap:     props.Wrap,
 		},
 		Style:    style,
 		Children: children,
@@ -141,4 +146,16 @@ func Overlay(x, y int, children ...Element) Element {
 		OverlayY: y,
 		Children: children,
 	}
+}
+
+// Spacer creates an empty flexible element that expands to consume
+// available space along the parent's main axis.
+func Spacer() Element {
+	return Box(
+		Props{
+			Width:  Grow(1),
+			Height: Grow(1),
+		},
+		Style{},
+	)
 }
