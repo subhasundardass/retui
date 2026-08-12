@@ -68,7 +68,7 @@ func (or *OverlayRenderer) renderWindowAsOverlay(w *Window) retui.Element {
 func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 	content := w.StaticContent
 	if w.RenderFn != nil {
-		content = w.RenderFn() // rebuilt fresh, inside a.Render()'s bracket — hooks resolve correctly here
+		content = w.RenderFn()
 	}
 
 	bodyBg := w.GetBodyBgColor()
@@ -76,23 +76,35 @@ func (or *OverlayRenderer) buildWindowContent(w *Window) retui.Element {
 		bodyBg = defaultBodyBgColor
 	}
 
+	titleBarHeight := 0
+	if w.ShowTitleBar() {
+		titleBarHeight = 1
+	}
+
+	bodyHeight := w.Height - titleBarHeight
+	if bodyHeight < 0 {
+		bodyHeight = 0
+	}
+
 	body := retui.Box(
-		retui.Props{},
+		retui.Props{
+			Width:  retui.Fixed(w.Width),
+			Height: retui.Fixed(bodyHeight),
+		},
 		retui.NewStyle().Background(bodyBg),
 		content,
 	)
 
-	// Skip the title bar entirely when the window has no title.
 	if !w.ShowTitleBar() {
 		return retui.Box(
-			retui.Props{Direction: retui.Column, Width: retui.Fit(), Height: retui.Fit()},
+			retui.Props{Direction: retui.Column, Width: retui.Fixed(w.Width), Height: retui.Fixed(w.Height)},
 			retui.NewStyle(),
 			body,
 		)
 	}
 
 	return retui.Box(
-		retui.Props{Direction: retui.Column, Width: retui.Fit(), Height: retui.Fit()},
+		retui.Props{Direction: retui.Column, Width: retui.Fixed(w.Width), Height: retui.Fixed(w.Height)},
 		retui.NewStyle(),
 		or.buildTitleBar(w),
 		body,

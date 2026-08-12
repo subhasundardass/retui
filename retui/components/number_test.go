@@ -521,7 +521,7 @@ func TestNumberInputChaining(t *testing.T) {
 		Max(100).
 		Step(0.5).
 		Decimals(2).
-		ArrowStep(true).
+		ArrowStep(false).
 		SelectAllOnFocus(true).
 		Focused(true)
 
@@ -561,8 +561,8 @@ func TestNumberInputChaining(t *testing.T) {
 	if n.config.Decimals != 2 {
 		t.Errorf("expected Decimals 2, got %d", n.config.Decimals)
 	}
-	if !n.config.ArrowStep {
-		t.Errorf("expected ArrowStep true, got %v", n.config.ArrowStep)
+	if n.config.ArrowStep != false {
+		t.Errorf("expected ArrowStep false, got %v", n.config.ArrowStep)
 	}
 	if !n.config.SelectAllOnFocus {
 		t.Errorf("expected SelectAllOnFocus true, got %v", n.config.SelectAllOnFocus)

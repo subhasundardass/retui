@@ -638,18 +638,33 @@ func safeDeepEqual(a, b any) (equal bool) {
 	return reflect.DeepEqual(a, b)
 }
 
+// safeCall runs fn (an effect cleanup) and recovers any panic so a bug in
+// user code can't crash the render loop. The recovered value is logged,
+// not silently discarded — a swallowed panic with no trace is far harder
+// to debug than a logged one.
 func safeCall(fn func()) {
 	if fn == nil {
 		return
 	}
-	defer func() { recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			Errorf("retui: recovered panic in effect cleanup: %v", r)
+		}
+	}()
 	fn()
 }
 
+// safeCallFn runs fn (an effect body) and recovers any panic so a bug in
+// user code can't crash the render loop. See safeCall for why the
+// recovered value is logged rather than discarded.
 func safeCallFn(fn func() func()) (result func()) {
 	if fn == nil {
 		return nil
 	}
-	defer func() { recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			Errorf("retui: recovered panic in effect: %v", r)
+		}
+	}()
 	return fn()
 }

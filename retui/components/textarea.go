@@ -300,10 +300,7 @@ render:
 		pos = len(runes)
 	}
 
-	isValid := true
-	if config.MinLength > 0 && len(runes) < config.MinLength {
-		isValid = false
-	}
+	isValid := config.MinLength <= 0 || len(runes) >= config.MinLength
 
 	display := config.Value
 	if display == "" && config.Placeholder != "" && !focused {
