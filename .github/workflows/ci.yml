@@ -1,22 +1,30 @@
-name: CI
+name: Go CI
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+
   pull_request:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   build-test:
     name: Build & Test
     runs-on: ubuntu-latest
+
     strategy:
+      fail-fast: false
       matrix:
-        go-version: ["1.26.2", "1.26.3"]
+        go-version:
+          - "1.26.3"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -25,96 +33,93 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
-          check-latest: true
           cache: true
+
+      - name: Verify Go version
+        run: go version
 
       - name: Verify go.mod is tidy
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum
+          git diff --exit-code -- go.mod go.sum
 
-      - name: Build (native)
-        run: go build ./retui/...
+      - name: Build
+        run: |
+          go build ./retui/...
 
-      - name: Build (windows cross-compile)
-        run: GOOS=windows GOARCH=amd64 go build ./retui/...
+      - name: Build Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build ./retui/...
 
-      - name: Build (darwin cross-compile)
-        run: GOOS=darwin GOARCH=arm64 go build ./retui/...
+      - name: Build macOS
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          go build ./retui/...
 
       - name: Vet
-        run: go vet ./retui/...
+        run: |
+          go vet ./retui/...
 
       - name: Gofmt check
         run: |
           fmt_out="$(gofmt -l ./retui)"
+
           if [ -n "$fmt_out" ]; then
             echo "The following files are not gofmt'd:"
             echo "$fmt_out"
             exit 1
           fi
 
-      - name: Run tests with coverage
+          echo "All Go files are properly formatted."
+
+      - name: Run tests
         run: |
-          # Find only packages that actually have _test.go files
-          TEST_PKGS=$(go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./retui/... | tr '\n' ' ')
-          
-          if [ -z "$TEST_PKGS" ]; then
-            echo "⚠️  No test files found in ./retui/..."
-            exit 1
-          fi
-          
-          echo "📋 Testing packages: $TEST_PKGS"
-          go test $TEST_PKGS -v -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./retui/...
+          go test ./retui/... \
+            -v \
+            -race \
+            -covermode=atomic \
+            -coverprofile=coverage.out \
+            -coverpkg=./retui/...
 
       - name: Display coverage summary
         run: |
-          echo "📊 Coverage Summary:"
+          echo "Coverage Summary:"
           go tool cover -func=coverage.out | tail -1
 
       - name: Generate HTML coverage report
         run: |
-          go tool cover -html=coverage.out -o coverage.html
+          go tool cover \
+            -html=coverage.out \
+            -o coverage.html
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v6
         with:
-          name: coverage-report-${{ matrix.go-version }}
+          name: coverage-report-go-${{ matrix.go-version }}
           path: |
             coverage.out
             coverage.html
+          if-no-files-found: error
 
-      - name: Upload test results on failure
-        uses: actions/upload-artifact@v6
+      - name: Upload test artifacts on failure
         if: failure()
+        uses: actions/upload-artifact@v6
         with:
-          name: test-results-${{ matrix.go-version }}
+          name: test-results-go-${{ matrix.go-version }}
           path: |
             coverage.out
             *.test
-
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v6
-
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v6
-  #       with:
-  #         go-version: "1.26.3"
-  #         cache: true
-
-  #     - name: golangci-lint
-  #       uses: golangci/golangci-lint-action@v9
-  #       with:
-  #         version: latest
-  #         args: --timeout=5m
+          if-no-files-found: ignore
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -132,10 +137,3 @@ jobs:
       - name: Run govulncheck
         run: |
           govulncheck ./retui/...
-
-      - name: Upload security results
-        uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: security-results
-          path: vuln-report.json

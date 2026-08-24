@@ -64,7 +64,7 @@ func SelectDropdown() *SelectField {
 			Width:       30,
 			Height:      5,
 			Style:       retui.NewStyle(),
-			Placeholder: "Select...",
+			Placeholder: "Type...",
 			Prefix:      "",
 			Suffix:      "",
 		},
@@ -251,7 +251,7 @@ func renderSelect(focused bool, config *SelectConfig) retui.Element {
 			if !handled && (key.Code != retui.KeyNone || key.Rune != 0) {
 				if !isOpen {
 					switch key.Code {
-					case retui.KeyEnter, retui.KeySpace, retui.KeyDown:
+					case retui.KeySpace:
 						if canOpen {
 							openOverlay("")
 						}

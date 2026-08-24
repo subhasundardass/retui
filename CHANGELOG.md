@@ -6,12 +6,17 @@ The format is based on **Keep a Changelog**, and this project follows **Semantic
 
 ---
 
-## [v0.8.1] - 2026-08-12
+## [v0.9.0] - 2026-08-22
 
 ### Added
 
-- Added Preffix, Suffix to Select Option
-- Added overflow, scrollX, scrollY, wrap on Element
+- Debugger Option (F12) — Added an F12 keyboard shortcut to toggle the debugger.
+- Element Overflow & Scrolling — Added overflow, scrollX, scrollY, and wrap support to Element.
+- Batch Rendering Support for Form — Form setters now participate correctly in retui.Batch(). Multiple SetField calls inside a batch are coalesced into a single redraw, matching the rendering behavior of UseState.
+
+### Updates
+
+- Form state updates now correctly trigger rendering while respecting Batch() boundaries.
 
 ### Updates
 

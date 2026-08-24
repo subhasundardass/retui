@@ -97,7 +97,7 @@ func Tree(
 
 		// Prefix (tree lines) in light gray
 		if prefix != "" {
-			prefixStyle := retui.NewStyle().Foreground(retui.Gray(1))
+			prefixStyle := retui.NewStyle().Foreground(retui.Gray(5))
 			lineElems = append(lineElems, retui.Text(prefix, prefixStyle))
 		}
 
