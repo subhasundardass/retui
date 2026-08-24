@@ -23,8 +23,8 @@ func TestSelectDropdownBuilder_Defaults(t *testing.T) {
 	if s.config.Value != "" {
 		t.Errorf("expected empty Value, got %q", s.config.Value)
 	}
-	if s.config.Placeholder != "Select..." {
-		t.Errorf("expected Placeholder 'Select...', got %q", s.config.Placeholder)
+	if s.config.Placeholder != "Type..." {
+		t.Errorf("expected Placeholder 'Type...', got %q", s.config.Placeholder)
 	}
 	if s.config.Width != 30 {
 		t.Errorf("expected Width 30, got %d", s.config.Width)
