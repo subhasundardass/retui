@@ -7,3 +7,4 @@ Makefile
 coverage.out
 .gitignore
 ci-test.log
+test.log
