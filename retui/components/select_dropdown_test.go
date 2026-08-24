@@ -335,7 +335,7 @@ func TestSelectChaining(t *testing.T) {
 		Label("Color").
 		Options(options).
 		Value("red").
-		Placeholder("Select...").
+		Placeholder("Type...").
 		Width(40).
 		Height(8).
 		Disabled(false).
@@ -353,8 +353,8 @@ func TestSelectChaining(t *testing.T) {
 	if s.config.Value != "red" {
 		t.Errorf("expected Value 'red', got %s", s.config.Value)
 	}
-	if s.config.Placeholder != "Select..." {
-		t.Errorf("expected Placeholder 'Select...', got %s", s.config.Placeholder)
+	if s.config.Placeholder != "Type..." {
+		t.Errorf("expected Placeholder 'Type...', got %s", s.config.Placeholder)
 	}
 	if s.config.Width != 40 {
 		t.Errorf("expected Width 40, got %d", s.config.Width)
