@@ -99,6 +99,7 @@ func (d *DateInputField) Value(v string) *DateInputField {
 
 func (d *DateInputField) Format(v string) *DateInputField {
 	d.config.Format = v
+
 	return d
 }
 
@@ -238,7 +239,6 @@ func applyMaskFormat(rawDigits string, mask string) string {
 			result.WriteRune(maskChar)
 		}
 	}
-
 	return result.String()
 }
 

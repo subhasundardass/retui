@@ -57,18 +57,6 @@ func UseForm[T any](initial T) *Form[T] {
 	return ref.Get()
 }
 
-// requestRender mirrors the exact pattern every setter in hooks.go uses:
-// set pendingRender under stateMu, but only if not inside a Batch(). This
-// means Form participates correctly in retui.Batch() — several SetField
-// calls inside one Batch() coalesce into a single redraw, same as UseState.
-func requestRender() {
-	stateMu.Lock()
-	if !batching {
-		pendingRender = true
-	}
-	stateMu.Unlock()
-}
-
 // ============================================================================
 // Values
 // ============================================================================

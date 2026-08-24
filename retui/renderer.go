@@ -40,6 +40,26 @@ func wrappedLines(text string, maxWidth int) []string {
 	return out
 }
 
+// requestRender mirrors the exact pattern every setter in hooks.go uses:
+// set pendingRender under stateMu, but only if not inside a Batch(). This
+// means Form participates correctly in retui.Batch() — several SetField
+// calls inside one Batch() coalesce into a single redraw, same as UseState.
+func requestRender() {
+	stateMu.Lock()
+	if !batching {
+		pendingRender = true
+	}
+	stateMu.Unlock()
+}
+
+// RequestRender schedules a re-render. Safe to call from any goroutine,
+// including background goroutines outside this package (e.g. a ticker
+// updating a clock display). This is the only render-triggering entry
+// point external packages should use.
+func RequestRender() {
+	requestRender()
+}
+
 // wrapText breaks a single unwrapped line into one or more lines, each with
 // cell width <= maxWidth. Prefers word boundaries (space-separated); words
 // longer than maxWidth are hard-broken at the boundary as a fallback.

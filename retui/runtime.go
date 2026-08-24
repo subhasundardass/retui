@@ -4,6 +4,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/subhasundardass/retui/retui/debug"
 )
 
 var CurrentScreenWidth int
@@ -236,122 +238,129 @@ func Exit() {
 //	app.Run(render, Props{})
 func (a *App) Run(fn func(props Props) Element, props Props) {
 
-	// Start screen for real (second start; first was in NewApp to detect size).
-	// This ensures proper defer cleanup and full terminal control.
+	// Start screen for real.
 	a.screen.Start()
-	defer a.screen.Stop() // ALWAYS restore terminal on exit, even if panic
+	defer a.screen.Stop()
 
-	// quit channel coordinates graceful shutdown across all goroutines.
-	// Created here (not globally) so each Run() call gets a fresh channel.
 	quit := make(chan struct{})
 	var quitOnce sync.Once
+
 	requestQuit := func() {
-		quitOnce.Do(func() { close(quit) })
+		quitOnce.Do(func() {
+			close(quit)
+		})
 	}
 
-	// SIGWINCH handler for terminal resize events.
-	// resize := make(chan os.Signal, 1)
-	// signal.Notify(resize, syscall.SIGWINCH)
-	// defer signal.Stop(resize) // Clean up signal handler on exit
 	resize, stopResize := newResizeChan()
 	defer stopResize()
 
-	// Ticker goroutine: sends alternating tick state every 500ms.
-	// Used by components for animations, blinking, etc.
 	tickerCh := make(chan bool, 1)
+
 	go func() {
 		tick := false
+
 		for {
-			time.Sleep(time.Millisecond * 500)
+			time.Sleep(500 * time.Millisecond)
 			tick = !tick
+
 			select {
 			case tickerCh <- tick:
-				// Tick sent successfully
 			case <-quit:
-				// App shutting down; exit goroutine
 				return
 			default:
-				// Channel full (last tick not consumed); skip
 			}
 		}
 	}()
 
-	// Keyboard input goroutine: reads from os.Stdin and parses keys.
-	// Feeds raw bytes to KeyScanner, which emits Key events.
 	go func() {
 		buf := make([]byte, 1024)
 		scanner := KeyScanner{}
+
 		for {
 			n, err := os.Stdin.Read(buf)
 			if err != nil {
-				// Read error (e.g., EOF, bad descriptor); shutdown gracefully
 				requestQuit()
 				return
 			}
+
 			for _, key := range scanner.Feed(buf[:n]) {
 				if key.Code == KeyCtrlC {
-					// Ctrl+C pressed; request graceful shutdown
 					requestQuit()
 					return
 				}
+
 				Keys <- key
 			}
 		}
 	}()
 
-	// Initial render to display startup UI
-	a.Render(fn, props)
+	// Initial render.
+	a.renderFrame(fn, props)
 
-	// Main event loop: multiplexes keyboard, timer, resize, and shutdown signals.
+	// Main event loop.
 	for {
 		select {
 		case <-quit:
-			// Graceful shutdown requested (exit, Ctrl+C, or Stdin read error)
 			return
 
 		case <-exitCh:
-			// Exit() called explicitly; request shutdown
 			requestQuit()
 
 		case key := <-Keys:
-			// Keyboard input received
-			modalOpen := IsAnyModalOpenFn != nil && IsAnyModalOpenFn()
 
-			// Tab key special case: exclusively for modal layer (no root interference)
+			// ---------------------------------------------------------
+			// RetUI built-in debug panel
+			// ---------------------------------------------------------
+			//
+			// F12 is handled by RetUI itself so applications do not
+			// need to register a debug key handler.
+			if key.Code == KeyF12 {
+				Infof("KEY: code=%v", key.Code)
+				ToggleDebugPanel()
+				a.renderFrame(fn, props)
+				continue
+			}
+
+			// ---------------------------------------------------------
+			// Normal application key handling
+			// ---------------------------------------------------------
+
+			modalOpen := IsAnyModalOpenFn != nil &&
+				IsAnyModalOpenFn()
+
 			if key.Code == KeyTab && modalOpen {
 				if WindowKeyDispatch != nil {
 					WindowKeyDispatch(key)
 				}
-				a.Render(fn, props)
-				break // Continue main loop, not exit
+
+				a.renderFrame(fn, props)
+				continue
 			}
 
-			// Set CurrentKey for hooks to see
 			CurrentKey = key
 
-			// Dispatch to modal/window layer if present
 			consumed := false
+
 			if WindowKeyDispatch != nil {
 				consumed = WindowKeyDispatch(key)
 			}
 
-			// If modal consumed the key, clear it before rendering so root doesn't see it
 			if consumed {
 				CurrentKey = Key{}
 			}
 
-			a.Render(fn, props)
+			a.renderFrame(fn, props)
 
 		case tick := <-tickerCh:
-			// Periodic tick (500ms interval); available to components for animations
 			CurrentTick = tick
-			a.Render(fn, props)
+
+			a.renderFrame(fn, props)
 
 		case <-resize:
-			// Terminal was resized (SIGWINCH signal); recompute layout
 			a.screen.HandleResize()
 			a.screen.ForceMarkAllDirty()
-			a.Render(fn, props)
+
+			a.renderFrame(fn, props)
 		}
 	}
 }
@@ -445,5 +454,29 @@ func (a *App) Render(fn func(props Props) Element, props Props) {
 		}
 		a.renderer.Render(next)
 		a.screen.Flush()
+	}
+}
+
+func (a *App) renderFrame(
+	fn func(props Props) Element,
+	props Props,
+) {
+	if debug.Enabled() {
+		debug.BeginFrame()
+	}
+
+	if DebugPanelVisible() {
+		a.Render(
+			func(props Props) Element {
+				return DebugPanel()
+			},
+			props,
+		)
+	} else {
+		a.Render(fn, props)
+	}
+
+	if debug.Enabled() {
+		debug.EndFrame()
 	}
 }

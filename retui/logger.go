@@ -5,26 +5,31 @@ package retui
 // retui.Debug("Focused:", focused)
 // retui.Debug("Current Route:", route)
 //----------
+//
+// Internally this file is now a thin, backward-compatible facade over
+// github.com/subhasundardass/retui/debug — the actual leveled logger,
+// in-memory history ring buffer, and file output all live there. Every
+// exported name and signature below is unchanged from the original
+// implementation; only what's underneath moved.
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
+
+	"github.com/subhasundardass/retui/retui/debug"
 )
 
 var (
-	logger    *log.Logger
 	debugMode bool
 	logFile   *os.File
 	logMu     sync.RWMutex
 	logLevel  LogLevel
 )
 
-// LogLevel represents the logging level
+// LogLevel represents the logging level.
 type LogLevel int
 
 const (
@@ -36,7 +41,7 @@ const (
 	LevelFatal
 )
 
-// String returns the string representation of the log level
+// String returns the string representation of the log level.
 func (l LogLevel) String() string {
 	switch l {
 	case LevelSuccess:
@@ -56,32 +61,48 @@ func (l LogLevel) String() string {
 	}
 }
 
-// Color codes for terminal output
-const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorPurple = "\033[35m"
-	colorCyan   = "\033[36m"
-	colorWhite  = "\033[37m"
-)
-
-func init() {
-	// Initialize with default settings
-	debugMode = true
-	logLevel = LevelDebug
-
-	// Setup logging
-	if err := setupLogging(); err != nil {
-		// Fallback to stderr if file logging fails
-		logger = log.New(os.Stderr, "", log.LstdFlags)
-		logger.Printf("Failed to setup log file: %v", err)
+// toDebugLevel maps retui's LogLevel onto debug.Level. LevelSuccess has
+// no dedicated debug.Level — Success/Successf tag it via a "[SUCCESS]"
+// message prefix instead — so it maps to debug.LevelInfo for gating
+// purposes. LevelFatal is handled separately (see Fatal/Fatalf) via
+// debug.Fatalf's unconditional path, since a fatal message must never be
+// silently dropped by level filtering right before the process exits.
+func toDebugLevel(l LogLevel) debug.Level {
+	switch l {
+	case LevelDebug:
+		return debug.LevelDebug
+	case LevelSuccess, LevelInfo:
+		return debug.LevelInfo
+	case LevelWarn:
+		return debug.LevelWarn
+	case LevelError, LevelFatal:
+		return debug.LevelError
+	default:
+		return debug.LevelInfo
 	}
 }
 
-// setupLogging configures the logging system
+func init() {
+	debugMode = true
+	logLevel = LevelDebug
+
+	// This package's original design was always-on (init() enabled
+	// debugMode and opened the log file unconditionally); SetDebugMode
+	// and SetLogLevel only ever adjusted verbosity, never a master
+	// switch. debug.Enable() is called once here, permanently, to
+	// preserve that: SetDebugMode/SetLogLevel below adjust debug.SetLevel
+	// only.
+	debug.Enable()
+	debug.SetLevel(toDebugLevel(logLevel))
+
+	if err := setupLogging(); err != nil {
+		// Fall back to stderr if file logging fails, same as before.
+		debug.SetOutput(os.Stderr)
+		debug.Errorf("Failed to setup log file: %v", err)
+	}
+}
+
+// setupLogging configures the logging system.
 func setupLogging() error {
 	logMu.Lock()
 	defer logMu.Unlock()
@@ -91,9 +112,9 @@ func setupLogging() error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// logPath is built entirely from getLogDir() (cwd) and a fixed filename —
-	// never from user input or external config — so path traversal isn't
-	// possible here despite gosec flagging the variable.
+	// logPath is built entirely from getLogDir() (cwd) and a fixed
+	// filename — never from user input or external config — so path
+	// traversal isn't possible here despite gosec flagging the variable.
 	logPath := filepath.Join(logDir, "retui.log")
 	var err error
 	logFile, err = os.OpenFile(
@@ -105,13 +126,13 @@ func setupLogging() error {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	// File only — no stderr so TUI screen stays clean
-	logger = log.New(logFile, "", 0)
+	// File only — no stdout/stderr, so the TUI screen stays clean.
+	debug.SetOutput(logFile)
 
 	return nil
 }
 
-// getLogDir returns the directory for log files
+// getLogDir returns the directory for log files.
 func getLogDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -120,40 +141,45 @@ func getLogDir() string {
 	return wd
 }
 
-// SetDebugMode enables or disables debug mode
+// SetDebugMode enables or disables debug mode.
 func SetDebugMode(enabled bool) {
 	logMu.Lock()
-	defer logMu.Unlock()
 	debugMode = enabled
 	if enabled {
 		logLevel = LevelDebug
 	} else {
 		logLevel = LevelInfo
 	}
+	l := logLevel
+	logMu.Unlock()
+
+	debug.SetLevel(toDebugLevel(l))
 }
 
-// SetLogLevel sets the minimum log level
+// SetLogLevel sets the minimum log level.
 func SetLogLevel(level LogLevel) {
 	logMu.Lock()
-	defer logMu.Unlock()
 	logLevel = level
+	logMu.Unlock()
+
+	debug.SetLevel(toDebugLevel(level))
 }
 
-// GetLogLevel returns the current log level
+// GetLogLevel returns the current log level.
 func GetLogLevel() LogLevel {
 	logMu.RLock()
 	defer logMu.RUnlock()
 	return logLevel
 }
 
-// IsDebugMode returns true if debug mode is enabled
+// IsDebugMode returns true if debug mode is enabled.
 func IsDebugMode() bool {
 	logMu.RLock()
 	defer logMu.RUnlock()
 	return debugMode
 }
 
-// CloseLog closes the log file
+// CloseLog closes the log file.
 func CloseLog() error {
 	logMu.Lock()
 	defer logMu.Unlock()
@@ -164,166 +190,157 @@ func CloseLog() error {
 	return nil
 }
 
-// logMessage is the internal logging function
-func logMessage(level LogLevel, color string, args ...interface{}) {
-	logMu.RLock()
-	defer logMu.RUnlock()
-
-	// Check if this level should be logged
-	if level < logLevel {
-		return
+// callerInfo replicates the "file:line" format the original logger
+// embedded in every line. skip is the runtime.Caller depth from the
+// exported function that calls this directly (2 for a top-level
+// function like Debug/Info/etc. calling callerInfo itself).
+func callerInfo(skip int) string {
+	_, file, line, ok := runtime.Caller(skip)
+	if !ok {
+		return ""
 	}
-
-	if logger == nil {
-		return
-	}
-
-	// Get caller information
-	_, file, line, ok := runtime.Caller(2)
-	callerInfo := ""
-	if ok {
-		// Get only the filename, not the full path
-		parts := strings.Split(file, "/")
-		filename := parts[len(parts)-1]
-		callerInfo = fmt.Sprintf("%s:%d", filename, line)
-	}
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	levelStr := level.String()
-
-	// Format the message
-	message := fmt.Sprint(args...)
-
-	// Create log entry
-	logEntry := fmt.Sprintf("[%s] [%s] %s %s",
-		timestamp,
-		levelStr,
-		callerInfo,
-		message,
-	)
-
-	// Write to log
-	logger.Println(logEntry)
-
-	// Also print to stdout with color if it's a terminal
-	// if isTerminal() {
-	// 	fmt.Printf("%s%s%s\n", color, logEntry, colorReset)
-	// }
+	parts := strings.Split(file, "/")
+	return fmt.Sprintf("%s:%d", parts[len(parts)-1], line)
 }
 
-// Debug logs debug messages (only shown in debug mode)
+// Debug logs debug messages.
+//
+// Note: the original implementation additionally gated this behind a
+// direct `if debugMode` check, on top of the level comparison SetLogLevel
+// already performs. That check was redundant whenever SetDebugMode was
+// used (it sets logLevel in lockstep with debugMode) and only mattered
+// if SetLogLevel(LevelDebug) was called directly without SetDebugMode —
+// in which case it silently suppressed Debug/Debugf despite the level
+// otherwise permitting it. That inconsistency is removed here: Debug and
+// Debugf are now gated purely by the configured level, like every other
+// call in this file.
 func Debug(args ...interface{}) {
-	if debugMode {
-		logMessage(LevelDebug, colorCyan, args...)
-	}
+	debug.Debugf("%s %s", callerInfo(2), fmt.Sprint(args...))
 }
 
-// Debugf logs a formatted debug message
+// Debugf logs a formatted debug message. See the Debug doc comment for a
+// note on a small behavior fix relative to the original implementation.
 func Debugf(format string, args ...interface{}) {
-	if debugMode {
-		logMessage(LevelDebug, colorCyan, fmt.Sprintf(format, args...))
-	}
+	debug.Debugf("%s %s", callerInfo(2), fmt.Sprintf(format, args...))
 }
 
-// Info logs info messages
+// Info logs info messages.
 func Info(args ...interface{}) {
-	logMessage(LevelInfo, colorGreen, args...)
+	debug.Infof("%s %s", callerInfo(2), fmt.Sprint(args...))
 }
 
-// Infof logs a formatted info message
+// Infof logs a formatted info message.
 func Infof(format string, args ...interface{}) {
-	logMessage(LevelInfo, colorGreen, fmt.Sprintf(format, args...))
+	debug.Infof("%s %s", callerInfo(2), fmt.Sprintf(format, args...))
 }
 
-// Warn logs warning messages
+// Warn logs warning messages.
 func Warn(args ...interface{}) {
-	logMessage(LevelWarn, colorYellow, args...)
+	debug.Warnf("%s %s", callerInfo(2), fmt.Sprint(args...))
 }
 
-// Warnf logs a formatted warning message
+// Warnf logs a formatted warning message.
 func Warnf(format string, args ...interface{}) {
-	logMessage(LevelWarn, colorYellow, fmt.Sprintf(format, args...))
+	debug.Warnf("%s %s", callerInfo(2), fmt.Sprintf(format, args...))
 }
 
-// Error logs error messages
+// Error logs error messages.
 func Error(args ...interface{}) {
-	logMessage(LevelError, colorRed, args...)
+	debug.Errorf("%s %s", callerInfo(2), fmt.Sprint(args...))
 }
 
-// Errorf logs a formatted error message
+// Errorf logs a formatted error message.
 func Errorf(format string, args ...interface{}) {
-	logMessage(LevelError, colorRed, fmt.Sprintf(format, args...))
+	debug.Errorf("%s %s", callerInfo(2), fmt.Sprintf(format, args...))
 }
 
-// Fatal logs fatal messages and exits
+// Fatal logs a fatal message and exits. Logging is unconditional — via
+// debug.Fatalf — regardless of SetDebugMode/SetLogLevel, because a fatal
+// message must never be silently dropped by verbosity filtering right
+// before the process exits.
 func Fatal(args ...interface{}) {
-	logMessage(LevelFatal, colorRed, args...)
+	debug.Fatalf("%s %s", callerInfo(2), fmt.Sprint(args...))
 	os.Exit(1)
 }
 
-// Fatalf logs a formatted fatal message and exits
+// Fatalf logs a formatted fatal message and exits. See Fatal.
 func Fatalf(format string, args ...interface{}) {
-	logMessage(LevelFatal, colorRed, fmt.Sprintf(format, args...))
+	debug.Fatalf("%s %s", callerInfo(2), fmt.Sprintf(format, args...))
 	os.Exit(1)
 }
 
-// Success logs success messages (green)
+// Success logs a success message, tagged "[SUCCESS]" in the message body
+// (debug.Level has no dedicated success level, so the tag lives in the
+// text rather than the bracketed level prefix).
 func Success(args ...interface{}) {
-	logMessage(LevelInfo, colorGreen, "✅ "+fmt.Sprint(args...))
+	debug.Infof("%s [SUCCESS] \u2705 %s", callerInfo(2), fmt.Sprint(args...))
 }
 
-// Successf logs a formatted success message
+// Successf logs a formatted success message. See Success.
+//
+// Note: the original Success() logged at LevelInfo while Successf()
+// logged at LevelSuccess — two different severities for what's
+// conceptually the same kind of message. Both now behave identically.
 func Successf(format string, args ...interface{}) {
-	logMessage(LevelSuccess, colorBlue, "✅ "+fmt.Sprintf(format, args...))
+	debug.Infof("%s [SUCCESS] \u2705 %s", callerInfo(2), fmt.Sprintf(format, args...))
 }
 
-// LogWithFields logs with additional fields (like structured logging)
+// LogWithFields logs with additional structured fields.
 func LogWithFields(level LogLevel, fields map[string]interface{}, message string) {
-	if level < logLevel {
-		return
-	}
-
 	fieldStr := ""
 	if len(fields) > 0 {
 		fieldStr = " " + fmt.Sprint(fields)
 	}
+	full := message + fieldStr
 
-	logMessage(level, colorWhite, message+fieldStr)
+	if level == LevelFatal {
+		debug.Fatalf("%s %s", callerInfo(2), full)
+		return
+	}
+
+	switch toDebugLevel(level) {
+	case debug.LevelDebug:
+		debug.Debugf("%s %s", callerInfo(2), full)
+	case debug.LevelWarn:
+		debug.Warnf("%s %s", callerInfo(2), full)
+	case debug.LevelError:
+		debug.Errorf("%s %s", callerInfo(2), full)
+	default:
+		debug.Infof("%s %s", callerInfo(2), full)
+	}
 }
 
-// WithField returns a new logger with a field (for structured logging)
+// Logger is a logger bound to a fixed set of structured fields.
 type Logger struct {
 	fields map[string]interface{}
 }
 
-// NewLogger creates a new logger with fields
+// NewLogger creates a new logger with fields.
 func NewLogger(fields map[string]interface{}) *Logger {
 	return &Logger{fields: fields}
 }
 
-// Debug logs a debug message with fields
+// Debug logs a debug message with fields.
 func (l *Logger) Debug(message string) {
-	if debugMode {
-		LogWithFields(LevelDebug, l.fields, message)
-	}
+	LogWithFields(LevelDebug, l.fields, message)
 }
 
-// Info logs an info message with fields
+// Info logs an info message with fields.
 func (l *Logger) Info(message string) {
 	LogWithFields(LevelInfo, l.fields, message)
 }
 
-// Warn logs a warning message with fields
+// Warn logs a warning message with fields.
 func (l *Logger) Warn(message string) {
 	LogWithFields(LevelWarn, l.fields, message)
 }
 
-// Error logs an error message with fields
+// Error logs an error message with fields.
 func (l *Logger) Error(message string) {
 	LogWithFields(LevelError, l.fields, message)
 }
 
-// AddField adds a field to the logger
+// AddField adds a field to the logger.
 func (l *Logger) AddField(key string, value interface{}) *Logger {
 	if l.fields == nil {
 		l.fields = make(map[string]interface{})
@@ -332,7 +349,7 @@ func (l *Logger) AddField(key string, value interface{}) *Logger {
 	return l
 }
 
-// WithFields creates a new logger with additional fields
+// WithFields creates a new logger with additional fields.
 func WithFields(fields map[string]interface{}) *Logger {
 	return NewLogger(fields)
 }
