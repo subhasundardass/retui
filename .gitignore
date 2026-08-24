@@ -2,3 +2,8 @@ logs.txt
 retui.log
 posts
 .idea
+test-workflow.sh
+Makefile
+coverage.out
+.gitignore
+ci-test.log
